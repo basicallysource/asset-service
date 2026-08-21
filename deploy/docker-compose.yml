@@ -16,19 +16,12 @@ services:
       # nonroot user the image runs as.
       - ${ASSET_SERVICE_DATA:-/var/lib/asset-service}:/data
     ports:
-      # Bound to loopback: a reverse proxy on the host publishes it. Change to
-      # "8080:8080" only if this service is the thing facing the internet.
-      - "127.0.0.1:${ASSET_SERVICE_PORT:-8080}:8080"
+      # Loopback by default: something on the host publishes it. Set
+      # ASSET_SERVICE_BIND to a private interface to reach it from elsewhere,
+      # or to 0.0.0.0 only when this service is what faces the internet.
+      - "${ASSET_SERVICE_BIND:-127.0.0.1}:${ASSET_SERVICE_PORT:-8080}:8080"
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-    labels:
-      # Inert unless a Traefik on this host is configured to look. Hosts that
-      # route some other way can ignore these or delete them.
-      traefik.enable: "${ASSET_SERVICE_TRAEFIK:-false}"
-      traefik.http.routers.asset-service.rule: "Host(`${ASSET_SERVICE_HOST:-assets.example.com}`)"
-      traefik.http.routers.asset-service.entrypoints: "websecure"
-      traefik.http.routers.asset-service.tls.certresolver: "${ASSET_SERVICE_CERT_RESOLVER:-default}"
-      traefik.http.services.asset-service.loadbalancer.server.port: "8080"

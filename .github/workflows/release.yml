@@ -106,6 +106,9 @@ jobs:
             printf 'Install by digest: `%s@%s`\n' "$IMAGE" "$DIGEST"
           } > notes.md
 
-          git tag -a "$VERSION" -m "$VERSION"
-          git push origin "$VERSION"
-          gh release create "$VERSION" release.json --title "$VERSION" --notes-file notes.md
+          # gh creates the tag at this commit as part of publishing, which
+          # keeps tag and release from ever disagreeing about what shipped.
+          gh release create "$VERSION" release.json \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes-file notes.md

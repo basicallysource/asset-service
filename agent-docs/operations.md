@@ -72,9 +72,53 @@ holds only which image to run and belongs to the release agent, which rewrites
 it on every install. `/etc/asset-service/asset-service.env` holds how the
 service runs and belongs to the operator; a release never reads or changes it.
 
+## Reaching it
+
 The compose file binds the service to loopback and expects something on the host
-to publish it. Traefik labels are included and are inert unless
-`ASSET_SERVICE_TRAEFIK=true`.
+to publish it. Set `ASSET_SERVICE_BIND` in `/opt/asset-service/.env` to a
+private interface address to reach it from a private network instead, or to
+`0.0.0.0` only when this service is the thing facing the internet.
+
+Note what does and does not need to be reachable. Uploads and manifest lookups
+go to this service; the bytes do not, since a reader is redirected to storage.
+A site that resolves its URLs at build time never calls this service at
+runtime, so a private address is often all it needs.
+
+Behind Traefik with the file provider, route to the container by name and put
+it on the proxy's network with a local `docker-compose.override.yml`:
+
+```yaml
+services:
+  asset-service:
+    container_name: asset-service
+    networks: [web]
+networks:
+  web:
+    external: true
+```
+
+```yaml
+# in the proxy's dynamic configuration
+http:
+  routers:
+    assets:
+      rule: "Host(`assets.example.com`)"
+      entryPoints: [websecure]
+      service: assets
+      tls: {certResolver: your-resolver}
+  services:
+    assets:
+      loadBalancer:
+        servers: [{url: "http://asset-service:8080"}]
+```
+
+With a label-driven proxy instead, add its labels in the same override file.
+
+One thing to check before putting this behind a CDN or proxy: upload bodies can
+be large, and several proxies cap request bodies well below this service's
+limit. Cloudflare's free plan stops at 100 MB, for instance. Either raise the
+proxy's cap, lower `ASSET_MAX_UPLOAD_BYTES` to match, or point uploads at the
+origin.
 
 ## Releases
 

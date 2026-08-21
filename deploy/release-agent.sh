@@ -19,6 +19,17 @@ IMAGE_KEEP_HOURS="${ASSET_SERVICE_IMAGE_KEEP_HOURS:-168}"
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 compose() { docker compose --project-directory "$DIR" --file "$DIR/docker-compose.yml" "$@"; }
 
+# pin_image replaces the image line in .env and leaves every other line alone.
+# Compose reads that file for substitution, so an operator may keep settings
+# there; an install must not be the thing that deletes them.
+pin_image() {
+    local tmp
+    tmp=$(mktemp "${DIR}/.env.XXXXXX")
+    grep -v '^ASSET_SERVICE_IMAGE=' "$DIR/.env" 2>/dev/null > "$tmp" || true
+    printf 'ASSET_SERVICE_IMAGE=%s\n' "$1" >> "$tmp"
+    mv "$tmp" "$DIR/.env"
+}
+
 mkdir -p "$(dirname "$STATE")"
 
 # One install at a time. The timer fires more often than a slow pull finishes,
@@ -59,7 +70,7 @@ log "installing ${version} (${ref}); currently ${installed:-none}"
 docker pull --quiet "$ref"
 
 previous=$(sed -n 's/^ASSET_SERVICE_IMAGE=//p' "$DIR/.env" 2>/dev/null || true)
-printf 'ASSET_SERVICE_IMAGE=%s\n' "$ref" > "$DIR/.env"
+pin_image "$ref"
 compose up -d --remove-orphans
 
 healthy=false
@@ -75,7 +86,7 @@ if [ "$healthy" != true ]; then
     log "${version} did not become healthy"
     if [ -n "$previous" ]; then
         log "rolling back to ${previous}"
-        printf 'ASSET_SERVICE_IMAGE=%s\n' "$previous" > "$DIR/.env"
+        pin_image "$previous"
         compose up -d --remove-orphans
     fi
     exit 1
