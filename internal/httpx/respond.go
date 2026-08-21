@@ -31,8 +31,18 @@ const (
 )
 
 // JSON writes v as the response body.
+//
+// It marks every answer uncacheable unless the handler has already said
+// otherwise. That is not paranoia about browsers: a key carries the asset's
+// real extension, so a manifest URL ends in .png or .jpeg, and a CDN in front
+// of this service will happily cache it as an image -- inventing a max-age of
+// its own if the origin does not send one. A manifest that says "renditions
+// are still being built" would then say that for hours after they were built.
 func JSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	w.WriteHeader(status)
 	if v == nil {
 		return

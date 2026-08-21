@@ -327,3 +327,24 @@ func TestAnImageUploadReportsItsLadderAsPending(t *testing.T) {
 		t.Errorf("renditions = %+v, want the original alone until the worker runs", body.Renditions)
 	}
 }
+
+// A manifest URL ends in the asset's own extension, so anything in front of
+// this service may take it for an image and cache it. It must say not to.
+func TestManifestsAreNotCacheable(t *testing.T) {
+	h := newHarness(t)
+	key := decode(t, h.do(t, http.MethodPost, "/v1/assets?namespace=docs&filename=note.txt", h.writer, "hello")).Key
+
+	for _, target := range []string{"/v1/assets/" + key, "/healthz"} {
+		w := h.do(t, http.MethodGet, target, "", "")
+		if got := w.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("GET %s Cache-Control = %q, want no-store", target, got)
+		}
+	}
+
+	// The delivery redirect is the exception: it is allowed to be cached,
+	// because the key it points at can only ever mean one file.
+	delivery := h.do(t, http.MethodGet, "/a/"+key, "", "")
+	if got := delivery.Header().Get("Cache-Control"); !strings.HasPrefix(got, "public") {
+		t.Errorf("delivery Cache-Control = %q, want it cacheable", got)
+	}
+}

@@ -15,6 +15,12 @@ Failures share one shape:
 Every response carries `X-Request-Id`. Send your own and it is reused, so one
 id can follow a request across services.
 
+Every response is `Cache-Control: no-store` except a delivery redirect. That
+matters more than it looks: a key ends in the asset's own extension, so
+`/v1/assets/docs/diagram-3f7a91c2b04e.png` looks like an image to a CDN, which
+will otherwise cache it -- and a manifest that says renditions are still being
+built would keep saying so long after they were done.
+
 ## Authentication
 
 ```
