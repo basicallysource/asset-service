@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -18,28 +19,34 @@ const deliveryMaxAge = "86400"
 
 // manifest is what callers get back for an asset.
 //
-// Renditions is the ladder: every form of this asset that can be fetched. It
-// holds one entry today, the bytes as uploaded. Derived forms -- an image at
-// several widths, a poster frame, a compressed variant -- are appended here as
-// they are produced, so a caller written against this shape today keeps
-// working when they arrive.
+// Renditions is the ladder: every form of this asset that can be fetched,
+// smallest first, with the bytes as uploaded last. Pick from it rather than
+// assuming what is in it -- an image too small to shrink usefully has a ladder
+// of one, and one still being processed grows.
+//
+// RenditionsStatus says whether the ladder is finished: "ready" when it is,
+// "pending" while derived forms are still being produced, "failed" if that was
+// given up on, and "none" for a kind of asset that has no derived forms.
 type manifest struct {
-	Key         string      `json:"key"`
-	Namespace   string      `json:"namespace"`
-	Digest      string      `json:"digest"`
-	Size        int64       `json:"size"`
-	ContentType string      `json:"content_type"`
-	Filename    string      `json:"filename"`
-	Visibility  string      `json:"visibility"`
-	CreatedAt   time.Time   `json:"created_at"`
-	URL         string      `json:"url"`
-	URLExpires  bool        `json:"url_expires"`
-	Renditions  []rendition `json:"renditions"`
+	Key              string      `json:"key"`
+	Namespace        string      `json:"namespace"`
+	Digest           string      `json:"digest"`
+	Size             int64       `json:"size"`
+	ContentType      string      `json:"content_type"`
+	Filename         string      `json:"filename"`
+	Visibility       string      `json:"visibility"`
+	CreatedAt        time.Time   `json:"created_at"`
+	URL              string      `json:"url"`
+	URLExpires       bool        `json:"url_expires"`
+	Renditions       []rendition `json:"renditions"`
+	RenditionsStatus string      `json:"renditions_status"`
 }
 
 type rendition struct {
 	Name        string `json:"name"`
 	ContentType string `json:"content_type"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 	Size        int64  `json:"size"`
 	URL         string `json:"url"`
 }
@@ -89,7 +96,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := s.manifest(result.Asset)
+	body, err := s.manifest(r.Context(), result.Asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
@@ -108,7 +115,7 @@ func (s *Server) metadata(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := s.manifest(asset)
+	body, err := s.manifest(r.Context(), asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
@@ -173,28 +180,54 @@ func (s *Server) readable(w http.ResponseWriter, r *http.Request) (catalog.Asset
 	return asset, true
 }
 
-func (s *Server) manifest(a catalog.Asset) (manifest, error) {
+func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error) {
 	url, expires, err := s.Assets.URL(a)
 	if err != nil {
 		return manifest{}, err
 	}
-	return manifest{
-		Key:         a.Key,
-		Namespace:   a.Namespace,
-		Digest:      "sha256:" + a.Digest,
-		Size:        a.Size,
+
+	derived, status, err := s.Assets.Ladder(ctx, a)
+	if err != nil {
+		return manifest{}, err
+	}
+
+	// Smallest first, original last: a caller walking the list for the first
+	// rung wide enough always lands on the cheapest one that works.
+	ladder := make([]rendition, 0, len(derived)+1)
+	for _, d := range derived {
+		derivedURL, _, err := s.Assets.KeyURL(d.Key, a.Visibility)
+		if err != nil {
+			return manifest{}, err
+		}
+		ladder = append(ladder, rendition{
+			Name:        d.Name,
+			ContentType: d.ContentType,
+			Width:       d.Width,
+			Height:      d.Height,
+			Size:        d.Size,
+			URL:         derivedURL,
+		})
+	}
+	ladder = append(ladder, rendition{
+		Name:        original,
 		ContentType: a.ContentType,
-		Filename:    a.Filename,
-		Visibility:  a.Visibility,
-		CreatedAt:   a.CreatedAt,
+		Size:        a.Size,
 		URL:         url,
-		URLExpires:  expires,
-		Renditions: []rendition{{
-			Name:        original,
-			ContentType: a.ContentType,
-			Size:        a.Size,
-			URL:         url,
-		}},
+	})
+
+	return manifest{
+		Key:              a.Key,
+		Namespace:        a.Namespace,
+		Digest:           "sha256:" + a.Digest,
+		Size:             a.Size,
+		ContentType:      a.ContentType,
+		Filename:         a.Filename,
+		Visibility:       a.Visibility,
+		CreatedAt:        a.CreatedAt,
+		URL:              url,
+		URLExpires:       expires,
+		Renditions:       ladder,
+		RenditionsStatus: status,
 	}, nil
 }
 

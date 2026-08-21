@@ -60,6 +60,23 @@ func BuildKey(namespace, filename, digest string) (string, error) {
 	return namespace + "/" + name + "-" + digest[:HashChars] + ext, nil
 }
 
+// RenditionKey composes the key for a derived form of an asset. It is built
+// the same way as any other key, from the original's name plus what makes this
+// one different, so a bucket listing reads as a family:
+//
+//	web/river-3f7a91c2b04e.png
+//	web/river-w640-a1b2c3d4e5f6.webp
+//
+// The hash is of the derived bytes, not the original's, because that is what
+// makes this object's own URL immutable.
+func RenditionKey(namespace, filename, rendition, digest, ext string) (string, error) {
+	stem := strings.TrimSuffix(path.Base(strings.ReplaceAll(filename, "\\", "/")), path.Ext(filename))
+	if slug(stem) == "" {
+		return "", fmt.Errorf("%w: filename %q has no usable name", ErrBadRequest, filename)
+	}
+	return BuildKey(namespace, slug(stem)+"-"+rendition+ext, digest)
+}
+
 // Namespace returns the namespace a key belongs to.
 func Namespace(key string) string {
 	ns, _, ok := strings.Cut(key, "/")

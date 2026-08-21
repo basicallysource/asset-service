@@ -1,7 +1,7 @@
 # asset-service
 
-Stores files, names each one after a hash of its own bytes, and hands out URLs
-to them.
+Stores files, names each one after a hash of its own bytes, produces the
+smaller copies a web page should actually download, and hands out URLs to them.
 
 ```
 POST /v1/assets?namespace=docs&filename=diagram.png     upload, returns a manifest
@@ -21,6 +21,11 @@ the file. That one decision is most of the design:
   there.
 - **A key cannot lie.** The service computes the hash itself. Callers propose a
   filename, never a key.
+
+Upload an image and a ladder of WebP renditions is built for it in the
+background -- 320px through 2048px, never wider than the original. The manifest
+lists what exists and whether more is coming, so a page can ask for the
+narrowest rung that suits it instead of a four-megabyte original.
 
 The service does not serve bytes. It answers with a URL -- public for public
 assets, signed and expiring for private ones -- and the reader fetches from

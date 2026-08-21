@@ -150,6 +150,9 @@ func TestUploadReturnsAManifestAndIsIdempotent(t *testing.T) {
 	if len(created.Renditions) != 1 || created.Renditions[0].Name != original {
 		t.Errorf("renditions = %+v, want just the original", created.Renditions)
 	}
+	if created.RenditionsStatus != assets.LadderNone {
+		t.Errorf("renditions_status = %q for a text file, want none", created.RenditionsStatus)
+	}
 	if created.URL != h.store.PublicURL(created.Key) {
 		t.Errorf("url = %q, want the store's public URL", created.URL)
 	}
@@ -289,5 +292,30 @@ func TestEveryResponseCarriesARequestID(t *testing.T) {
 	w := h.do(t, http.MethodGet, "/healthz", "", "")
 	if w.Header().Get("X-Request-Id") == "" {
 		t.Error("no request id on the response")
+	}
+}
+
+// An image is queued for a ladder at upload time; nothing in this harness runs
+// the worker, so the manifest should say so rather than pretend to be done.
+func TestAnImageUploadReportsItsLadderAsPending(t *testing.T) {
+	h := newHarness(t)
+
+	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("x", 64)
+	r := httptest.NewRequest(http.MethodPost,
+		"/v1/assets?namespace=docs&filename=diagram.png", strings.NewReader(png))
+	r.Header.Set("Authorization", "Bearer "+h.writer)
+	r.Header.Set("Content-Type", "image/png")
+	w := httptest.NewRecorder()
+	h.handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d (%s)", w.Code, w.Body.String())
+	}
+	body := decode(t, w)
+	if body.RenditionsStatus != assets.LadderPending {
+		t.Errorf("renditions_status = %q, want pending", body.RenditionsStatus)
+	}
+	if len(body.Renditions) != 1 || body.Renditions[0].Name != original {
+		t.Errorf("renditions = %+v, want the original alone until the worker runs", body.Renditions)
 	}
 }

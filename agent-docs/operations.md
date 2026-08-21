@@ -22,6 +22,16 @@ one restart at a time.
 | `ASSET_MAX_UPLOAD_BYTES` | `256MiB` | Accepts `1048576` or `256MiB`. |
 | `ASSET_UPLOAD_TIMEOUT` | `30m` | How long a body may take to arrive. |
 | `ASSET_SIGNED_URL_TTL` | `15m` | Lifetime of a private asset's URL. |
+| `ASSET_RENDITIONS` | `true` | Produce derived images at all. |
+| `ASSET_RENDITION_WIDTHS` | `320,640,1024,1600,2048` | Widths to produce, below the original's own width. |
+| `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
+| `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
+| `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
+
+Rendition work runs in the service's own process, one image at a time. On a
+host shared with something else, that is the setting that matters: resizing
+will use everything it is given, and one worker keeps it a good neighbour. A
+2048px ladder off a 24-megapixel photograph takes a few seconds of one core.
 
 ## Keys
 

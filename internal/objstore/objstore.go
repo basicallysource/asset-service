@@ -2,11 +2,12 @@
 // put an object, ask whether one is already there, and hand a reader a URL it
 // can fetch the bytes from itself.
 //
-// There is deliberately no Get. Bytes never travel through the service. A
-// reader is given a URL -- a public one for public assets, a signed one for
-// private assets -- and fetches from storage directly. That is what keeps one
-// download from being billed as two transfers, and it is why this interface
-// stays this small.
+// Nothing here serves a reader. A reader is given a URL -- a public one for
+// public assets, a signed one for private assets -- and fetches from storage
+// directly, which is what keeps one download from being billed as two
+// transfers. Get exists for work the service does to an asset, like producing
+// smaller copies of an image; it must never end up on the path of a request
+// that could have been a redirect.
 package objstore
 
 import (
@@ -44,6 +45,8 @@ type PutRequest struct {
 type Store interface {
 	Head(ctx context.Context, key string) (Object, error)
 	Put(ctx context.Context, req PutRequest, body io.Reader) error
+	// Get reads an object back, for processing it. Not for serving it.
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	// PublicURL is where anyone can fetch a public object.
 	PublicURL(key string) string
 	// SignedURL is a time-limited URL for a private object.

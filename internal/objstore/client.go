@@ -178,6 +178,27 @@ func (c *Client) Put(ctx context.Context, req PutRequest, body io.Reader) error 
 	return nil
 }
 
+// Get reads an object back so the service can do something with it -- produce
+// smaller copies of an image, for instance. It is never on the path of a
+// request that a redirect could have answered.
+func (c *Client) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.objectURL(key).String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	signRequest(req, c.creds, c.cfg.Region, service, emptyPayload, c.now())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("objstore: get %s: %w", key, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		return nil, parseError("get", key, resp)
+	}
+	return resp.Body, nil
+}
+
 // PublicURL is where anyone can fetch a public object.
 func (c *Client) PublicURL(key string) string {
 	return c.public + "/" + strings.TrimLeft(key, "/")

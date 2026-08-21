@@ -4,6 +4,11 @@ What this service is committed to, why, and what is deliberately still missing.
 Anything not written down here is not settled; anything here should be changed
 by editing this document in the same change that changes the code.
 
+## What it does
+
+Takes a file, stores it once under a name derived from its own bytes, produces
+the smaller copies a web page should actually download, and hands out URLs.
+
 ## The one idea
 
 An asset is named after a hash of its own bytes:
@@ -62,6 +67,14 @@ credential; a request that *presents* a credential that does not work is
 rejected at the edge. Whether a private asset exists is itself private, so an
 unauthorised read gets the same 404 a missing asset gets.
 
+**Derived forms are produced in the background, never during an upload.**
+Re-encoding a large photograph takes seconds, and an upload that waited for it
+would time out on a slow connection for a reason unrelated to the upload. An
+image is queued, a single worker builds its ladder, and the manifest says
+whether that has finished. One worker at a time is deliberate: this usually
+runs beside other services on a small machine, and image resizing will take
+every core it is offered.
+
 **Releases are automatic and versioned by derivation.** Merging to `main` runs
 the tests, builds an image, then tags the next patch version and publishes a
 release naming the image digest. Hosts poll for releases and install by digest.
@@ -76,27 +89,29 @@ internal/config        environment -> one validated struct, once
 internal/httpx         middleware and the single way to write a response
 internal/auth          who is calling, and what they may do
 internal/objstore      S3-compatible storage: SigV4, a client, an in-memory double
-internal/catalog       SQLite: assets and API keys, with migrations
+internal/catalog       SQLite: assets, renditions, the job queue, API keys
+internal/imaging       bytes in, smaller bytes out -- no storage, no database
 internal/assets        the domain: hash, name, store, resolve
+internal/renditions    the worker that drains the queue
 internal/api           routes and their access rules
 deploy                 how a host runs and updates it
 ```
 
 The dependency direction is one-way: `api` -> `assets` -> {`objstore`,
-`catalog`}, with `httpx` and `config` as leaves. `auth` knows nothing about
-assets, and `assets` knows nothing about HTTP.
+`catalog`}, with `httpx`, `config` and `imaging` as leaves. `auth` knows nothing
+about assets, `assets` knows nothing about HTTP, and `imaging` knows nothing
+about anything -- which is why the expensive part of this service is testable
+without any of the rest of it.
 
 ## Not built yet, and where it goes
 
 These are expected. Each names the seam it arrives at, so the first one does not
 require rearranging the service.
 
-**Renditions -- the size ladder.** A manifest already carries a `renditions`
-array; today it holds one entry, the bytes as uploaded. Derived forms (an image
-at several widths, a compressed variant, a poster frame) append to it. They need
-a `renditions` table keyed by asset, a job that produces them, and a rule for
-which are worth producing. A caller written against the manifest today keeps
-working when they appear.
+**More kinds of derived form.** Images get a WebP ladder. Video wants a poster
+frame and transcodes, which needs ffmpeg and a much larger CPU budget than
+resizing does; PDFs want a first-page thumbnail. Each is a new producer behind
+the same queue, table and manifest.
 
 **A second kind of credential.** `auth.Authenticator` takes the whole request
 and returns a `Principal`. A signed-in user, or a session minted by another

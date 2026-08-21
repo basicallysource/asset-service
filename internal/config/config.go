@@ -5,9 +5,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/basicallysource/asset-service/internal/imaging"
+	"github.com/basicallysource/asset-service/internal/renditions"
 )
 
 // Prefix every variable this service reads.
@@ -28,6 +32,14 @@ type Config struct {
 	// PublicBaseURL is where readers fetch public objects -- a CDN or other
 	// edge in front of the same bucket.
 	PublicBaseURL string
+
+	// Renditions controls whether derived forms are produced at all, and what
+	// they look like when they are.
+	Renditions        bool
+	RenditionWidths   []int
+	RenditionQuality  int
+	RenditionPoll     time.Duration
+	RenditionAttempts int
 
 	S3Endpoint  string
 	S3Region    string
@@ -59,6 +71,11 @@ func Load() (Config, error) {
 	cfg.UploadTimeout = duration("UPLOAD_TIMEOUT", 30*time.Minute, &problems)
 	cfg.SignedURLTTL = duration("SIGNED_URL_TTL", 15*time.Minute, &problems)
 	cfg.S3PathStyle = boolean("S3_PATH_STYLE", false, &problems)
+	cfg.Renditions = boolean("RENDITIONS", true, &problems)
+	cfg.RenditionWidths = widths("RENDITION_WIDTHS", imaging.DefaultWidths, &problems)
+	cfg.RenditionQuality = number("RENDITION_QUALITY", imaging.DefaultQuality, 1, 100, &problems)
+	cfg.RenditionPoll = duration("RENDITION_POLL", renditions.DefaultPoll, &problems)
+	cfg.RenditionAttempts = number("RENDITION_ATTEMPTS", renditions.DefaultMaxAttempts, 1, 100, &problems)
 
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("config: %s", strings.Join(problems, "; "))
@@ -120,6 +137,39 @@ func bytesValue(name string, fallback int64, problems *[]string) int64 {
 		return fallback
 	}
 	return n * multiplier
+}
+
+// widths parses a comma-separated list of image widths.
+func widths(name string, fallback []int, problems *[]string) []int {
+	raw := lookup(name)
+	if raw == "" {
+		return fallback
+	}
+
+	var parsed []int
+	for _, field := range strings.Split(raw, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || n < 1 || n > 20000 {
+			*problems = append(*problems, prefix+name+" must be a comma-separated list of pixel widths")
+			return fallback
+		}
+		parsed = append(parsed, n)
+	}
+	sort.Ints(parsed)
+	return parsed
+}
+
+func number(name string, fallback, low, high int, problems *[]string) int {
+	raw := lookup(name)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < low || n > high {
+		*problems = append(*problems, fmt.Sprintf("%s%s must be a number between %d and %d", prefix, name, low, high))
+		return fallback
+	}
+	return n
 }
 
 func boolean(name string, fallback bool, problems *[]string) bool {

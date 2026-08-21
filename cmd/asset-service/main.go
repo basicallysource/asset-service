@@ -18,7 +18,9 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/config"
+	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/objstore"
+	"github.com/basicallysource/asset-service/internal/renditions"
 )
 
 // version is stamped at build time with -ldflags "-X main.version=...".
@@ -114,14 +116,36 @@ func serve() error {
 		return err
 	}
 
+	service := &assets.Service{
+		Store:        store,
+		Catalog:      db,
+		MaxBytes:     cfg.MaxUploadBytes,
+		SpoolDir:     cfg.SpoolDir,
+		SignedURLTTL: cfg.SignedURLTTL,
+		Logger:       logger,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if cfg.Renditions {
+		worker := &renditions.Worker{
+			Catalog:     db,
+			Store:       store,
+			Options:     imaging.Options{Widths: cfg.RenditionWidths, Quality: cfg.RenditionQuality},
+			Logger:      logger,
+			MaxAttempts: cfg.RenditionAttempts,
+			MaxBytes:    cfg.MaxUploadBytes,
+			Poll:        cfg.RenditionPoll,
+		}
+		// The upload path pokes the worker so a new image starts being
+		// processed at once rather than at the next poll.
+		service.Notify = worker.Wake
+		go worker.Run(ctx)
+	}
+
 	server := &api.Server{
-		Assets: &assets.Service{
-			Store:        store,
-			Catalog:      db,
-			MaxBytes:     cfg.MaxUploadBytes,
-			SpoolDir:     cfg.SpoolDir,
-			SignedURLTTL: cfg.SignedURLTTL,
-		},
+		Assets:  service,
 		Auth:    &auth.APIKeys{Keys: catalogKeys{db}},
 		Catalog: db,
 		Version: version,
@@ -144,16 +168,14 @@ func serve() error {
 		"addr", cfg.Addr,
 		"bucket", cfg.S3Bucket,
 		"public_base_url", cfg.PublicBaseURL,
-		"max_upload_bytes", cfg.MaxUploadBytes)
+		"max_upload_bytes", cfg.MaxUploadBytes,
+		"renditions", cfg.Renditions)
 
-	return listen(httpServer, logger)
+	return listen(ctx, httpServer, logger)
 }
 
-// listen serves until a stop signal, then drains.
-func listen(server *http.Server, logger *slog.Logger) error {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
+// listen serves until ctx is done, then drains.
+func listen(ctx context.Context, server *http.Server, logger *slog.Logger) error {
 	failed := make(chan error, 1)
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

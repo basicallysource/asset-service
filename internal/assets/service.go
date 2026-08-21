@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/basicallysource/asset-service/internal/catalog"
+	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/objstore"
 )
 
@@ -51,7 +53,25 @@ type Service struct {
 
 	// Now is the clock, swapped in tests.
 	Now func() time.Time
+
+	// Notify is called when an asset has been queued for processing, so the
+	// worker can start without waiting for its next poll. Optional.
+	Notify func()
+
+	Logger *slog.Logger
 }
+
+// Whether an asset's derived forms exist yet.
+const (
+	// LadderNone means this kind of asset has no derived forms.
+	LadderNone = "none"
+	// LadderPending means they are queued or being produced.
+	LadderPending = "pending"
+	// LadderReady means they are done.
+	LadderReady = "ready"
+	// LadderFailed means producing them did not work and was given up on.
+	LadderFailed = "failed"
+)
 
 // PutRequest is one upload.
 type PutRequest struct {
@@ -138,8 +158,59 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 		if err != nil {
 			return PutResult{}, err
 		}
+		return PutResult{Asset: asset, Created: false}, nil
 	}
-	return PutResult{Asset: asset, Created: created}, nil
+
+	s.queue(ctx, asset)
+	return PutResult{Asset: asset, Created: true}, nil
+}
+
+// queue asks for an asset's derived forms. It never fails an upload: the bytes
+// are stored and the manifest already answers for them, so a queue that is
+// briefly unwritable is a delay, not a lost asset.
+func (s *Service) queue(ctx context.Context, asset catalog.Asset) {
+	if !imaging.Supported(asset.ContentType) {
+		return
+	}
+	if err := s.Catalog.Enqueue(ctx, asset.Key, s.now()); err != nil {
+		s.logger().Error("queue renditions", "asset", asset.Key, "error", err)
+		return
+	}
+	if s.Notify != nil {
+		s.Notify()
+	}
+}
+
+// Ladder returns an asset's derived forms and whether more are coming.
+func (s *Service) Ladder(ctx context.Context, asset catalog.Asset) ([]catalog.Rendition, string, error) {
+	if !imaging.Supported(asset.ContentType) {
+		return nil, LadderNone, nil
+	}
+
+	renditions, err := s.Catalog.RenditionsFor(ctx, asset.Key)
+	if err != nil {
+		return nil, "", err
+	}
+
+	job, err := s.Catalog.JobFor(ctx, asset.Key)
+	switch {
+	case errors.Is(err, catalog.ErrNotFound):
+		// No outstanding work: whatever exists is all there will be.
+		return renditions, LadderReady, nil
+	case err != nil:
+		return nil, "", err
+	case job.State == catalog.JobFailed:
+		return renditions, LadderFailed, nil
+	default:
+		return renditions, LadderPending, nil
+	}
+}
+
+func (s *Service) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return slog.Default()
 }
 
 // store uploads the body unless storage already holds these exact bytes.
@@ -191,11 +262,17 @@ func (s *Service) Get(ctx context.Context, key string) (catalog.Asset, error) {
 // fetches from storage directly -- this service hands out addresses, it does
 // not carry payloads.
 func (s *Service) URL(a catalog.Asset) (url string, expires bool, err error) {
-	if a.Visibility == catalog.VisibilityPrivate {
-		signed, err := s.Store.SignedURL(a.Key, s.SignedURLTTL)
+	return s.KeyURL(a.Key, a.Visibility)
+}
+
+// KeyURL is URL for any stored object, including a rendition, which is visible
+// exactly as much as the asset it was derived from.
+func (s *Service) KeyURL(key, visibility string) (url string, expires bool, err error) {
+	if visibility == catalog.VisibilityPrivate {
+		signed, err := s.Store.SignedURL(key, s.SignedURLTTL)
 		return signed, true, err
 	}
-	return s.Store.PublicURL(a.Key), false, nil
+	return s.Store.PublicURL(key), false, nil
 }
 
 func (s *Service) now() time.Time {

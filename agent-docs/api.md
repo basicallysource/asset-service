@@ -74,16 +74,36 @@ The manifest. Public assets need no credential; private ones need
   "created_at": "2026-08-21T04:12:07Z",
   "url": "https://cdn.example.com/docs/diagram-3f7a91c2b04e.png",
   "url_expires": false,
+  "renditions_status": "ready",
   "renditions": [
+    {"name": "w320", "content_type": "image/webp", "width": 320, "height": 240,
+     "size": 18204, "url": "https://cdn.example.com/docs/diagram-w320-8c1d.webp"},
+    {"name": "w640", "content_type": "image/webp", "width": 640, "height": 480,
+     "size": 49118, "url": "https://cdn.example.com/docs/diagram-w640-2b7f.webp"},
     {"name": "original", "content_type": "image/png", "size": 48213,
      "url": "https://cdn.example.com/docs/diagram-3f7a91c2b04e.png"}
   ]
 }
 ```
 
-`renditions` is the ladder: every form of this asset that can be fetched. It
-holds one entry today. Derived forms are appended as they are produced, so read
-the ladder and pick rather than assuming what is in it.
+`renditions` is the ladder: every form of this asset that can be fetched,
+smallest first, with the bytes as uploaded last. Walk it for the first rung
+wide enough for where you are showing the image, and fall back to the last
+entry. Read it rather than assuming what is in it -- an image too small to
+shrink usefully has a ladder of one.
+
+`renditions_status` says whether the ladder is finished:
+
+| | |
+|---|---|
+| `ready` | Nothing more is coming. |
+| `pending` | Derived forms are queued or being produced. Poll, or use what is there. |
+| `failed` | Producing them was given up on. What is listed is all there will be. |
+| `none` | This kind of asset has no derived forms -- an STL, a zip, a video. |
+
+Images are queued the moment they are uploaded, so a manifest fetched straight
+after an upload usually says `pending`. Widths are produced only below the
+original's own width: nothing is ever upscaled.
 
 `url_expires` says whether `url` is stable or time-limited. A stable URL can be
 kept forever. An expiring one must be fetched again, not cached.

@@ -1,6 +1,7 @@
 package objstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -67,6 +68,17 @@ func (m *Memory) Put(_ context.Context, req PutRequest, body io.Reader) error {
 	return nil
 }
 
+func (m *Memory) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	o, ok := m.objects[key]
+	if !ok {
+		return nil, fmt.Errorf("objstore: get %s: no such object", key)
+	}
+	return io.NopCloser(bytes.NewReader(o.body)), nil
+}
+
 func (m *Memory) PublicURL(key string) string {
 	return strings.TrimRight(m.BaseURL, "/") + "/" + strings.TrimLeft(key, "/")
 }
@@ -81,6 +93,13 @@ func (m *Memory) Bytes(key string) ([]byte, bool) {
 	defer m.mu.Unlock()
 	o, ok := m.objects[key]
 	return o.body, ok
+}
+
+// Forget removes an object, for tests that need storage to lose one.
+func (m *Memory) Forget(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objects, key)
 }
 
 // Len is how many objects are stored.
