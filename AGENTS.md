@@ -19,6 +19,7 @@ internal/identity      proving who somebody is, over GitHub's device flow
 internal/policy        what an account may do, in numbers, in one place
 internal/imaging       bytes in, smaller bytes out -- no storage, no database
 internal/video         the same for video, by driving ffmpeg
+internal/model         renders and slice reports for 3D models, via OrcaSlicer
 internal/derive        which of those applies, and the one place that decides
 internal/assets        the domain: hash, name, store, resolve
 internal/renditions    the worker that builds ladders

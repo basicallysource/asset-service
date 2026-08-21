@@ -120,6 +120,21 @@ distroless image with nothing in it. That trade is real and was made on
 purpose. Where ffmpeg is absent the service still runs and video simply has no
 derived forms, which is what it did before.
 
+**A model gets a picture and the slicer's own numbers.** An STL's ladder is a
+rendered PNG plus two JSON reports: what printing it costs with supports off
+and with supports on, sliced under one fixed, named profile so any two reports
+are ever comparable. The numbers are OrcaSlicer's own, read back out of the
+3MF it exported, never an estimate. The render is pure Go and works anywhere;
+slicing, like video, drives a program this service did not write -- with one
+deliberate difference: OrcaSlicer is not in the serving image, so
+`model.Supported` asks about the content type alone. The box that stores an
+upload queues the job without asking what is installed on it, and a worker
+that has a slicer (`ORCA_BIN`, `ORCA_PROFILES`) claims it. Where none does,
+the job fails visibly rather than completing with the numbers missing. Both
+support variants are sliced every time because grams turn on that one boolean;
+a fixed pair of renditions is what keeps the queue and the manifest free of
+parameters.
+
 **Deriving can happen on a different machine.** The queue, the bytes and every
 naming decision stay here; the CPU time does not have to. `POST /v1/jobs/claim`
 hands out a job and a URL to the original, the worker sends back what it made,
@@ -163,6 +178,7 @@ internal/objstore      S3-compatible storage: SigV4, a client, an in-memory doub
 internal/catalog       SQLite: assets, renditions, the job queue, API keys
 internal/imaging       bytes in, smaller bytes out -- no storage, no database
 internal/video         the same for video, by driving ffmpeg
+internal/model         renders and slice reports for 3D models, via OrcaSlicer
 internal/derive        which of those applies, and the one place that decides
 internal/identity      proving who somebody is, over GitHub's device flow
 internal/policy        what an account may do, in numbers, in one place
@@ -183,10 +199,9 @@ this service is testable without any of the rest of it.
 These are expected. Each names the seam it arrives at, so the first one does not
 require rearranging the service.
 
-**More kinds of derived form.** Images get a WebP ladder and video gets MP4
-encodes and a poster. A PDF wants a first-page thumbnail; an STL wants a
-render. Each is a backend in `internal/derive` behind the same queue, table and
-manifest.
+**More kinds of derived form.** A PDF wants a first-page thumbnail; a zip
+wants a listing. Each is a backend in `internal/derive` behind the same queue,
+table and manifest, the way images, video and models already are.
 
 **More identity providers.** `auth.Authenticator` takes the whole request and
 returns a `Principal`, and `internal/identity` proves who somebody is. A second

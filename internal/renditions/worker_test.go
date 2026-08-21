@@ -167,11 +167,11 @@ func TestRebuildingIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestNonImagesAreNeverQueued(t *testing.T) {
+func TestUnderivableTypesAreNeverQueued(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	asset := f.upload(t, "bracket.stl", "model/stl", []byte("solid bracket\nendsolid\n"))
+	asset := f.upload(t, "notes.txt", "text/plain", []byte("nothing to derive here"))
 
 	renditions, status, err := f.service.Ladder(ctx, asset)
 	if err != nil {
@@ -181,7 +181,25 @@ func TestNonImagesAreNeverQueued(t *testing.T) {
 		t.Errorf("status = %q with %d renditions, want none", status, len(renditions))
 	}
 	if worked, err := f.worker.processOne(ctx); worked || err != nil {
-		t.Errorf("the worker found work for a non-image: %v, %v", worked, err)
+		t.Errorf("the worker found work for an underivable type: %v, %v", worked, err)
+	}
+}
+
+// A model is queued on the strength of its content type alone. Whether THIS
+// machine can slice it is a different question, answered by whichever worker
+// claims the job -- see internal/model.
+func TestModelsAreQueued(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	asset := f.upload(t, "bracket.stl", "model/stl", []byte("solid bracket\nendsolid\n"))
+
+	_, status, err := f.service.Ladder(ctx, asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != assets.LadderPending {
+		t.Errorf("status = %q, want %q", status, assets.LadderPending)
 	}
 }
 

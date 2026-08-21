@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/basicallysource/asset-service/internal/imaging"
+	"github.com/basicallysource/asset-service/internal/model"
 	"github.com/basicallysource/asset-service/internal/video"
 	_ "golang.org/x/image/webp"
 )
@@ -45,11 +46,13 @@ type Rendition struct {
 type Options struct {
 	Image imaging.Options
 	Video video.Options
+	Model model.Options
 }
 
 // Supported reports whether an asset of this content type has derived forms.
 func Supported(contentType string) bool {
-	return imaging.Supported(contentType) || video.Supported(contentType)
+	return imaging.Supported(contentType) || video.Supported(contentType) ||
+		model.Supported(contentType)
 }
 
 // Ladder produces every derived form of the asset at path, smallest first. An
@@ -78,6 +81,20 @@ func Ladder(ctx context.Context, path, contentType string, opts Options) ([]Rend
 		ladder, err := video.Ladder(ctx, path, opts.Video)
 		if err != nil {
 			if errors.Is(err, video.ErrUnsupported) {
+				return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			}
+			return nil, err
+		}
+		out := make([]Rendition, 0, len(ladder))
+		for _, r := range ladder {
+			out = append(out, Rendition(r))
+		}
+		return out, nil
+
+	case model.Supported(contentType):
+		ladder, err := model.Ladder(ctx, path, opts.Model)
+		if err != nil {
+			if errors.Is(err, model.ErrUnsupported) {
 				return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
 			}
 			return nil, err

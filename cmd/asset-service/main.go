@@ -21,6 +21,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/identity"
 	"github.com/basicallysource/asset-service/internal/imaging"
+	"github.com/basicallysource/asset-service/internal/model"
 	"github.com/basicallysource/asset-service/internal/objstore"
 	"github.com/basicallysource/asset-service/internal/renditions"
 	"github.com/basicallysource/asset-service/internal/video"
@@ -182,6 +183,7 @@ func serve() error {
 			Options: derive.Options{
 				Image: imaging.Options{Widths: cfg.RenditionWidths, Quality: cfg.RenditionQuality},
 				Video: video.Options{Widths: cfg.VideoWidths, CRF: cfg.VideoCRF, Preset: cfg.VideoPreset},
+				Model: model.OptionsFromEnv(),
 			},
 			Logger:      logger,
 			MaxAttempts: cfg.RenditionAttempts,

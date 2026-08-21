@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/basicallysource/asset-service/internal/derive"
+	"github.com/basicallysource/asset-service/internal/model"
 	"github.com/basicallysource/asset-service/internal/video"
 )
 
@@ -48,12 +49,16 @@ func workCommand(args []string) error {
 	if !video.Available() {
 		fmt.Fprintln(os.Stderr, "work: ffmpeg is not installed; video jobs will be reported as failed")
 	}
+	modelOpts := model.OptionsFromEnv()
+	if !model.Available(modelOpts) {
+		fmt.Fprintln(os.Stderr, "work: OrcaSlicer is not installed (ORCA_BIN, ORCA_PROFILES); model jobs will be reported as failed")
+	}
 	fmt.Printf("working for %s\n", saved.URL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	options := derive.Options{Video: video.Options{Preset: *preset}}
+	options := derive.Options{Video: video.Options{Preset: *preset}, Model: modelOpts}
 	for ctx.Err() == nil {
 		worked, err := workOne(ctx, c, options)
 		if err != nil {

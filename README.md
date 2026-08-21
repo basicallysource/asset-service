@@ -25,7 +25,9 @@ the file. That one decision is most of the design:
 Upload the original and the web-friendly copies are built for it in the
 background. An image gets a JPEG ladder, 320px through 2048px, never wider than
 what was uploaded -- PNG where it really uses transparency. A video gets H.264 MP4 encodes and a still to show before it
-plays. The manifest lists what exists, how big the original is, and whether
+plays. A 3D model (STL) gets a rendered PNG and two slice reports: the
+print cost in grams and minutes, with and without supports, measured by
+OrcaSlicer on a worker rather than estimated. The manifest lists what exists, how big the original is, and whether
 more is coming, so a page can ask for the narrowest rung that suits it instead
 of a forty-megabyte file off a camera.
 
