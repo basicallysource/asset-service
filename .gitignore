@@ -1,0 +1,12 @@
+AGENTS.md.local
+agent-notes/
+
+# Build output
+/asset-service
+/dist/
+
+# Local state: a catalog, a spool, or an env file must never be committed.
+*.db
+*.db-shm
+*.db-wal
+.env

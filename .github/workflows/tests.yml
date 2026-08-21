@@ -1,0 +1,39 @@
+name: Tests
+
+# Runs on its own for a branch or a pull request, and is called by the release
+# workflow so that what ships is what was tested -- one definition, not two.
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # The race detector, because the one place concurrency matters here --
+      # two uploads of the same bytes at once -- is meant to be safe by design.
+      - name: Test
+        run: go test -race ./...
+
+      - name: Build
+        run: go build ./...

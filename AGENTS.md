@@ -1,8 +1,24 @@
 # Asset Service
 
-Asset Service is intended to be a generic service for authenticated asset
-uploads, storage, processing, and delivery. This repository is designed to be
-public-ready.
+Asset Service is a generic service for authenticated asset uploads, storage,
+processing, and delivery. This repository is public.
+
+Start with [`agent-docs/architecture.md`](agent-docs/architecture.md): it is the
+committed design, the invariants, and the list of things deliberately not built
+yet with the seam each one arrives at. Change it in the same commit that changes
+what it describes.
+
+```
+cmd/asset-service      wiring, the operator CLI, graceful shutdown
+internal/config        environment -> one validated struct, once
+internal/httpx         middleware and the single way to write a response
+internal/auth          who is calling, and what they may do
+internal/objstore      S3-compatible storage: SigV4, a client, an in-memory double
+internal/catalog       SQLite: assets and API keys, with migrations
+internal/assets        the domain: hash, name, store, resolve
+internal/api           routes and their access rules
+deploy                 how a host runs and updates it
+```
 
 ## Public Repository Rules
 
@@ -26,5 +42,5 @@ public-ready.
 - `agent-docs/` contains repository-wide documentation for agents and external
   contributors. Keep it accurate, public-safe, and useful without access to
   private context.
-- Do not treat a Go service, a particular hosting provider, or an edge runtime
-  as a committed architecture until it is documented as a decision.
+- A decision is committed once it is written in `agent-docs/architecture.md`,
+  and not before. Anything absent from it is still open.

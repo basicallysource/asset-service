@@ -1,0 +1,11 @@
+[Unit]
+Description=Install the newest asset-service release
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/asset-service/release-agent.sh
+# The agent takes its own lock; this keeps systemd from stacking runs too.
+TimeoutStartSec=15min
