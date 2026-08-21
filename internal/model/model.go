@@ -155,10 +155,16 @@ func Ladder(ctx context.Context, path string, opts Options) ([]Rendition, error)
 		return nil, fmt.Errorf("model: prepare mesh: %w", err)
 	}
 
+	// A variant that fails to slice is omitted rather than failing the job:
+	// the slicer makes floating regions fatal with supports off, so some
+	// geometry only has a support-on answer, and that answer is still worth
+	// having. Both failing means the model itself cannot be sliced.
+	var sliceErrs []error
 	for _, support := range []bool{false, true} {
 		metrics, err := slice(ctx, opts, profiles, prepared, support)
 		if err != nil {
-			return nil, fmt.Errorf("model: slice (support=%v): %w", support, err)
+			sliceErrs = append(sliceErrs, fmt.Errorf("support=%v: %w", support, err))
+			continue
 		}
 		report, err := json.MarshalIndent(metrics, "", " ")
 		if err != nil {
@@ -174,6 +180,9 @@ func Ladder(ctx context.Context, path string, opts Options) ([]Rendition, error)
 			Extension:   ".json",
 			Bytes:       report,
 		})
+	}
+	if len(sliceErrs) == 2 {
+		return nil, fmt.Errorf("model: slice: %w; %v", sliceErrs[0], sliceErrs[1])
 	}
 	return out, nil
 }
