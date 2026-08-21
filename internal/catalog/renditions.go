@@ -21,6 +21,13 @@ type Rendition struct {
 	CreatedAt   time.Time
 }
 
+// DefaultJobAttempts is how many times a job may fail before it is left alone.
+// It lives here because FailJob is what enforces it, and because more than one
+// caller decides a job's fate now that work can happen on another machine --
+// a zero passed to FailJob means "give up after the first failure", which is
+// never what anybody meant.
+const DefaultJobAttempts = 4
+
 // Job states. A job that finishes is deleted, so there is no done state.
 const (
 	JobPending = "pending"
@@ -152,6 +159,21 @@ func (db *DB) ReleaseClaimedJobs(ctx context.Context) (int64, error) {
 		time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, fmt.Errorf("catalog: release claimed jobs: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// ReleaseStaleJobs puts back work that has been claimed for too long. With the
+// worker in this process, a crash is caught at startup; with the worker on
+// another machine, nothing local notices it dying, so a claim that has gone
+// quiet has to time out instead.
+func (db *DB) ReleaseStaleJobs(ctx context.Context, before time.Time) (int64, error) {
+	res, err := db.sql.ExecContext(ctx, `
+		UPDATE jobs SET state = 'pending', updated_at = ?
+		WHERE state = 'running' AND updated_at < ?`,
+		time.Now().UTC().Format(time.RFC3339Nano), before.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, fmt.Errorf("catalog: release stale jobs: %w", err)
 	}
 	return res.RowsAffected()
 }

@@ -137,8 +137,9 @@ poster is an image and has a width like any other rung:
 `preload="none"` with a poster is the whole trick: the page shows the still and
 downloads nothing until somebody presses play.
 
-Transcoding is slower than resizing -- minutes, not seconds, and one video at a
-time -- so `renditions_status` stays `pending` for a while. The original is
+Transcoding is slower than resizing -- minutes, not seconds -- so
+`renditions_status` stays `pending` for a while, and how long depends on what
+is doing the work rather than on you. The original is
 usable the moment the upload returns.
 
 A self-served account cannot upload video: an account nobody has vouched for

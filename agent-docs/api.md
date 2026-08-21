@@ -189,6 +189,33 @@ a manifest when you can, since it skips the extra round trip.
 A private asset that the caller may not read answers `404`, the same as one that
 does not exist.
 
+## POST /v1/jobs/claim
+
+Take the oldest job that is due. `200` returns the asset's key, content type
+and a `source_url` to read the original from; `204` means there is nothing to
+do. Requires `admin:*` -- a worker decides what an asset's smaller copies look
+like, which is not something a write scope buys.
+
+A claim is not a lease you renew. Go quiet for half an hour and the job is
+offered to somebody else, because a worker on another machine can die without
+anything here noticing.
+
+## POST /v1/jobs/renditions
+
+Store one derived form. Query: `key`, `name` (`w640`, `poster`), `width`,
+`height`, `ext`. The body is the raw bytes and `Content-Type` is what they are.
+Requires `admin` on the key's namespace.
+
+The key is computed here from the bytes, exactly as it is for an upload: a
+worker can no more name an object than an uploader can.
+
+## POST /v1/jobs/finish
+
+Close a claim. Query: `key`. Body, optional:
+`{"error": "...", "permanent": true}`. No error means it worked. An error puts
+the job back for another attempt unless `permanent` says the bytes will never
+derive, in which case there is nothing to come back for.
+
 ## GET /healthz, GET /readyz
 
 `healthz` says the process is up and answers without touching anything else.

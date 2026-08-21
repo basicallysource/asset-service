@@ -3,6 +3,7 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -175,6 +176,50 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 
 	s.queue(ctx, asset)
 	return PutResult{Asset: asset, Created: true}, nil
+}
+
+// PutRendition stores one derived form of an asset and records it.
+//
+// It lives here rather than in the worker because the work can happen
+// anywhere -- in this process, or on a machine with cores to spare that hands
+// the bytes back over the API -- and where the bytes came from must not change
+// what is stored or how it is named.
+func (s *Service) PutRendition(ctx context.Context, asset catalog.Asset, r derive.Rendition) error {
+	sum := sha256.Sum256(r.Bytes)
+	digest := hex.EncodeToString(sum[:])
+
+	key, err := RenditionKey(asset.Namespace, asset.Filename, r.Name, digest, r.Extension)
+	if err != nil {
+		return err
+	}
+
+	head, err := s.Store.Head(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !head.Exists {
+		if err := s.Store.Put(ctx, objstore.PutRequest{
+			Key:         key,
+			Size:        int64(len(r.Bytes)),
+			ContentType: r.ContentType,
+			Digest:      digest,
+			Public:      asset.Visibility == catalog.VisibilityPublic,
+		}, bytes.NewReader(r.Bytes)); err != nil {
+			return err
+		}
+	}
+
+	return s.Catalog.InsertRendition(ctx, catalog.Rendition{
+		AssetKey:    asset.Key,
+		Name:        r.Name,
+		Key:         key,
+		ContentType: r.ContentType,
+		Width:       r.Width,
+		Height:      r.Height,
+		Size:        int64(len(r.Bytes)),
+		Digest:      digest,
+		CreatedAt:   s.now(),
+	})
 }
 
 // measure reads the asset's pixel size off the spooled body, so a manifest can

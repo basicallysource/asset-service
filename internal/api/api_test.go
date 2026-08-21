@@ -25,6 +25,7 @@ type harness struct {
 	store   *objstore.Memory
 	writer  string // a token that may write to docs
 	reader  string // a token that may only read docs
+	worker  string // a token that may work the queue
 }
 
 func newHarness(t *testing.T) *harness {
@@ -72,6 +73,7 @@ func newHarness(t *testing.T) *harness {
 		store:   store,
 		writer:  mint("ci", "write:docs", "read:docs"),
 		reader:  mint("viewer", "read:docs"),
+		worker:  mint("worker", "admin:*", "read:*"),
 	}
 }
 

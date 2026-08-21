@@ -61,6 +61,8 @@ func run(args []string) error {
 		return measureCommand(args)
 	case "requeue":
 		return requeueCommand(args)
+	case "work":
+		return workCommand(args)
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -99,6 +101,12 @@ Usage:
                                              stored before it was measured
   asset-service requeue                      build derived forms for assets
                                              that have none
+
+  asset-service work [flags]                 do the deriving for a service,
+                                             on this machine
+      --once             drain the queue and stop
+      --poll <duration>  wait this long when there is nothing to do
+      --preset <name>    libx264 speed against size, e.g. veryfast
 
   asset-service version                      print the build version
 
@@ -194,6 +202,8 @@ func serve() error {
 		Identity:       &identity.GitHub{ClientID: cfg.GitHubClientID},
 		ClientIPHeader: cfg.ClientIPHeader,
 		AdminLogins:    cfg.AdminLogins,
+
+		RenditionAttempts: cfg.RenditionAttempts,
 	}
 
 	httpServer := &http.Server{

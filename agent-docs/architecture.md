@@ -107,6 +107,17 @@ distroless image with nothing in it. That trade is real and was made on
 purpose. Where ffmpeg is absent the service still runs and video simply has no
 derived forms, which is what it did before.
 
+**Deriving can happen on a different machine.** The queue, the bytes and every
+naming decision stay here; the CPU time does not have to. `POST /v1/jobs/claim`
+hands out a job and a URL to the original, the worker sends back what it made,
+and `asset-service work` is that worker. This exists because the box a small
+service runs on is chosen for being cheap and shared, and transcoding is the
+one thing in here that will take a machine down with it -- so the box that
+serves assets must never have to be the box that transcodes them. A worker in
+this process and a worker on another continent go through the same
+`Service.PutRendition`, so where the bytes were made cannot change how they are
+stored or named.
+
 **One place decides what has derived forms.** `internal/derive` dispatches on
 content type for both questions -- may this be queued, and how is it made --
 so the upload path and the worker cannot disagree about what the service can

@@ -42,6 +42,9 @@ type Server struct {
 	// they sign in. This is how the people who run the service bootstrap
 	// themselves without shell access to the host.
 	AdminLogins []string
+	// RenditionAttempts is how many times a job may fail before it is left
+	// alone, for work reported by a worker on another machine.
+	RenditionAttempts int
 
 	// readyProbe rate-limits the storage check behind /readyz.
 	readyProbe storageProbe
@@ -95,6 +98,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/assets", s.upload)
 	mux.HandleFunc("GET /v1/assets/{key...}", s.metadata)
 	mux.HandleFunc("GET /a/{key...}", s.deliver)
+	mux.HandleFunc("POST /v1/jobs/claim", s.claimJob)
+	mux.HandleFunc("POST /v1/jobs/renditions", s.putRendition)
+	mux.HandleFunc("POST /v1/jobs/finish", s.finishJob)
 
 	return httpx.Chain(mux,
 		httpx.RequestID,

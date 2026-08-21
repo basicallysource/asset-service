@@ -22,7 +22,7 @@ one restart at a time.
 | `ASSET_MAX_UPLOAD_BYTES` | `256MiB` | Accepts `1048576` or `256MiB`. |
 | `ASSET_UPLOAD_TIMEOUT` | `30m` | How long a body may take to arrive. |
 | `ASSET_SIGNED_URL_TTL` | `15m` | Lifetime of a private asset's URL. |
-| `ASSET_RENDITIONS` | `true` | Produce derived forms at all. |
+| `ASSET_RENDITIONS` | `true` | Run the rendition worker in this process. Off still queues the work; see below. |
 | `ASSET_RENDITION_WIDTHS` | `320,640,1024,1600,2048` | Widths to produce, below the original's own width. |
 | `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
@@ -46,6 +46,30 @@ for a small fraction of the time.
 **Video needs ffmpeg and ffprobe on `PATH`.** The image ships with them. Where
 they are missing the service still runs and video simply has no derived forms,
 which is what it did before it could transcode.
+
+## Deriving on another machine
+
+Transcoding will take a small host down with it, and the host a service like
+this runs on is usually shared with something that matters more. So the work
+does not have to happen there.
+
+Set `ASSET_RENDITIONS=false` on the service. Uploads are still queued; nothing
+in this process works the queue. Then, on any machine with cores to spare, with
+a credential that has `admin:*` and ffmpeg installed:
+
+```sh
+ASSET_SERVICE_URL=https://assets.example.com ASSET_SERVICE_TOKEN=asset_... \
+  asset-service work
+```
+
+It claims a job, fetches the original straight from storage, derives, sends the
+bytes back, and asks for the next one. `--once` drains the queue and stops,
+which is what a cron job or a burst machine wants; `--preset veryfast` trades
+size for time. Stopping it at any point is safe: a claim that goes quiet for
+half an hour is offered to somebody else.
+
+Several workers can run at once. Each claim is taken under a write lock, so two
+workers never get the same job.
 
 ## Measuring assets stored before dimensions existed
 

@@ -10,10 +10,7 @@
 package renditions
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -31,7 +28,7 @@ import (
 // Defaults for the worker's own behaviour.
 const (
 	DefaultPoll        = 15 * time.Second
-	DefaultMaxAttempts = 4
+	DefaultMaxAttempts = catalog.DefaultJobAttempts
 	retryBase          = 30 * time.Second
 	retryCap           = 30 * time.Minute
 )
@@ -45,6 +42,10 @@ const (
 type Worker struct {
 	Catalog *catalog.DB
 	Store   objstore.Store
+	// Assets stores what this worker produces. Storing a rendition is the
+	// service's job wherever the work happened, so a worker on another machine
+	// reaches the same code through the API.
+	Assets  *assets.Service
 	Options derive.Options
 	Logger  *slog.Logger
 
@@ -186,7 +187,7 @@ func (w *Worker) build(ctx context.Context, key string) error {
 	}
 
 	for _, rendition := range ladder {
-		if err := w.store(ctx, asset, rendition); err != nil {
+		if err := w.Assets.PutRendition(ctx, asset, rendition); err != nil {
 			return err
 		}
 	}
@@ -219,44 +220,6 @@ func (w *Worker) stage(ctx context.Context, key string) (string, error) {
 		return "", fmt.Errorf("stage %s: %w", key, err)
 	}
 	return file.Name(), nil
-}
-
-func (w *Worker) store(ctx context.Context, asset catalog.Asset, r derive.Rendition) error {
-	sum := sha256.Sum256(r.Bytes)
-	digest := hex.EncodeToString(sum[:])
-
-	key, err := assets.RenditionKey(asset.Namespace, asset.Filename, r.Name, digest, r.Extension)
-	if err != nil {
-		return err
-	}
-
-	head, err := w.Store.Head(ctx, key)
-	if err != nil {
-		return err
-	}
-	if !head.Exists {
-		if err := w.Store.Put(ctx, objstore.PutRequest{
-			Key:         key,
-			Size:        int64(len(r.Bytes)),
-			ContentType: r.ContentType,
-			Digest:      digest,
-			Public:      asset.Visibility == catalog.VisibilityPublic,
-		}, bytes.NewReader(r.Bytes)); err != nil {
-			return err
-		}
-	}
-
-	return w.Catalog.InsertRendition(ctx, catalog.Rendition{
-		AssetKey:    asset.Key,
-		Name:        r.Name,
-		Key:         key,
-		ContentType: r.ContentType,
-		Width:       r.Width,
-		Height:      r.Height,
-		Size:        int64(len(r.Bytes)),
-		Digest:      digest,
-		CreatedAt:   w.now(),
-	})
 }
 
 func (w *Worker) applyDefaults() {

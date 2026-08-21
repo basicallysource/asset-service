@@ -55,15 +55,17 @@ func newFixture(t *testing.T) *fixture {
 	store := objstore.NewMemory()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 
+	service := &assets.Service{
+		Store: store, Catalog: db, MaxBytes: 8 << 20,
+		SpoolDir: t.TempDir(), SignedURLTTL: time.Minute, Logger: quiet,
+	}
+
 	return &fixture{
-		db:    db,
-		store: store,
-		service: &assets.Service{
-			Store: store, Catalog: db, MaxBytes: 8 << 20,
-			SpoolDir: t.TempDir(), SignedURLTTL: time.Minute, Logger: quiet,
-		},
+		db:      db,
+		store:   store,
+		service: service,
 		worker: &Worker{
-			Catalog: db, Store: store, Logger: quiet,
+			Catalog: db, Store: store, Assets: service, Logger: quiet,
 			Options:  derive.Options{Image: imaging.Options{Widths: []int{320, 640}}},
 			MaxBytes: 8 << 20,
 		},
