@@ -161,6 +161,15 @@ the only thing about a stored asset that is ever written after the fact, and
 only because it is a property of bytes that never change -- `measure` records
 it for assets stored before the service could.
 
+**Finished work leaves a record.** The job queue forgets a row the moment it
+is done -- that is what makes it a queue -- so CompleteJob and FailJob append
+one line to a `derivations` table on the way out: asset, content type,
+outcome, attempt count, and claim-to-finish seconds. Append-only and a few
+tiny rows per day, it is the answer to "how often do we derive, how long does
+slicing take, what keeps failing" (`asset-service stats`, on the host) without
+a metrics stack. Logging is best-effort by design: a log insert must never
+stop the queue.
+
 **Releases are automatic and versioned by derivation.** Merging to `main` runs
 the tests, builds an image, then tags the next patch version and publishes a
 release naming the image digest. Hosts poll for releases and install by digest.

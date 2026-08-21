@@ -121,8 +121,10 @@ func (db *DB) ClaimJob(ctx context.Context, now time.Time) (Job, error) {
 	return job, nil
 }
 
-// CompleteJob removes finished work.
+// CompleteJob removes finished work, recording what it was and how long it
+// took in the derivations log on the way out.
 func (db *DB) CompleteJob(ctx context.Context, assetKey string) error {
+	db.logDerivation(ctx, assetKey, "ok", "", time.Now().UTC())
 	if _, err := db.sql.ExecContext(ctx, `DELETE FROM jobs WHERE asset_key = ?`, assetKey); err != nil {
 		return fmt.Errorf("catalog: complete %s: %w", assetKey, err)
 	}
@@ -134,6 +136,7 @@ func (db *DB) CompleteJob(ctx context.Context, assetKey string) error {
 // consuming the worker -- a job that cannot succeed should be visible, not
 // retried forever.
 func (db *DB) FailJob(ctx context.Context, assetKey, reason string, retryAt time.Time, maxAttempts int) error {
+	db.logDerivation(ctx, assetKey, "failed", reason, time.Now().UTC())
 	_, err := db.sql.ExecContext(ctx, `
 		UPDATE jobs
 		SET attempts = attempts + 1,

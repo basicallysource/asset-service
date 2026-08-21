@@ -62,6 +62,8 @@ func run(args []string) error {
 		return measureCommand(args)
 	case "requeue":
 		return requeueCommand(args)
+	case "stats":
+		return statsCommand(args)
 	case "work":
 		return workCommand(args)
 	case "version":
@@ -101,6 +103,7 @@ Usage:
 
   asset-service measure                      record the pixel size of assets
                                              stored before it was measured
+  asset-service stats                        how often derivation runs, and how long it takes
   asset-service requeue [--rebuild]          build derived forms for assets
                                              that have none; --rebuild also
                                              replaces ones already made
