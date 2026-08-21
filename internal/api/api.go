@@ -42,6 +42,9 @@ type Server struct {
 	// they sign in. This is how the people who run the service bootstrap
 	// themselves without shell access to the host.
 	AdminLogins []string
+
+	// readyProbe rate-limits the storage check behind /readyz.
+	readyProbe storageProbe
 }
 
 // CatalogKeys adapts the catalog to what auth needs, which is one lookup. It

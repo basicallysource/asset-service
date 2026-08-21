@@ -170,5 +170,15 @@ does not exist.
 ## GET /healthz, GET /readyz
 
 `healthz` says the process is up and answers without touching anything else.
+It is what a supervisor should restart on.
+
 `readyz` also checks that the catalog opens and that storage answers with the
-credentials it was given; it is what a deploy should gate on.
+credentials it was given, which is what a deploy and an external monitor should
+watch: a process can be running while the storage behind it is unreachable, and
+`healthz` would still say yes. Match on `"status":"ready"` rather than on the
+status code alone.
+
+The storage half of `readyz` is checked at most once every few seconds and the
+answer is shared. The route is unauthenticated, because a monitor is the point
+of it, and without that window a flood of cheap requests here would become a
+flood of expensive ones against the object store.

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -346,5 +347,36 @@ func TestManifestsAreNotCacheable(t *testing.T) {
 	delivery := h.do(t, http.MethodGet, "/a/"+key, "", "")
 	if got := delivery.Header().Get("Cache-Control"); !strings.HasPrefix(got, "public") {
 		t.Errorf("delivery Cache-Control = %q, want it cacheable", got)
+	}
+}
+
+// countingStore records how often storage was actually asked anything.
+type countingStore struct {
+	objstore.Store
+	heads atomic.Int64
+}
+
+func (c *countingStore) Head(ctx context.Context, key string) (objstore.Object, error) {
+	c.heads.Add(1)
+	return c.Store.Head(ctx, key)
+}
+
+// /readyz has to be unauthenticated for a monitor to use it, and it asks
+// storage a question. Without a window, cheap requests here would become
+// expensive ones there.
+func TestReadinessDoesNotAskStorageOnEveryRequest(t *testing.T) {
+	h := newHarness(t)
+	counted := &countingStore{Store: h.store}
+	h.server.Assets.Store = counted
+	h.handler = h.server.Handler()
+
+	for range 20 {
+		if w := h.do(t, http.MethodGet, "/readyz", "", ""); w.Code != http.StatusOK {
+			t.Fatalf("readyz = %d", w.Code)
+		}
+	}
+
+	if got := counted.heads.Load(); got != 1 {
+		t.Errorf("20 readiness checks asked storage %d times, want 1", got)
 	}
 }
