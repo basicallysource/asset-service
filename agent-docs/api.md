@@ -165,9 +165,14 @@ image where it expected something to play.
 Images and videos are queued the moment they are uploaded, so a manifest
 fetched straight after an upload usually says `pending`. An image takes
 seconds; a video is transcoded one at a time and takes as long as that takes.
-Widths are produced only below the original's own width: nothing is ever
-upscaled. A video too small to shrink still gets a poster, because showing a
-still without downloading the video is worth having at any size.
+
+Nothing is ever upscaled. An image's rungs stop below its own width, because a
+WebP the same size as the original is not worth the bytes. A video's go up to
+and including its own width, and a video narrower than every configured width
+gets one encode at its own size, because for video the saving is the bitrate
+rather than the pixel count -- a minute off a camera is tens of megabytes and
+the same frames re-encoded are a tenth of that. Either way there is a poster,
+so a page can show something without downloading a video at all.
 
 `url_expires` says whether `url` is stable or time-limited. A stable URL can be
 kept forever. An expiring one must be fetched again, not cached.

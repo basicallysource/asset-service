@@ -27,7 +27,7 @@ one restart at a time.
 | `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
 | `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
-| `ASSET_VIDEO_WIDTHS` | `960,1920` | Widths to encode video at, below the source's own width. |
+| `ASSET_VIDEO_WIDTHS` | `960,1920` | Widths to encode video at, up to the source's own. A narrower source gets one encode at its own width. |
 | `ASSET_VIDEO_CRF` | `26` | H.264 quality, 0-51, lower being better and larger. |
 | `ASSET_VIDEO_PRESET` | `medium` | libx264 speed against size. `veryfast` on a busy host; `slow` if the bytes matter more than the wait. |
 | `ASSET_GITHUB_CLIENT_ID` | none | Enables sign-in. A device-flow client id, which is public by design -- there is no secret. Empty means this service issues no credentials and an operator mints them on the host. |

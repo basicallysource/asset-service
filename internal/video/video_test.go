@@ -50,7 +50,7 @@ func itoa(n int) string {
 	return string(out)
 }
 
-func TestLadderEncodesEveryWidthSmallerThanTheSource(t *testing.T) {
+func TestLadderEncodesEveryWidthUpToTheSource(t *testing.T) {
 	source := testVideo(t, 1280, 720, "2")
 
 	ladder, err := Ladder(context.Background(), source, Options{
@@ -61,7 +61,7 @@ func TestLadderEncodesEveryWidthSmallerThanTheSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 640 and 960 are narrower than the source; 1920 is not. Plus a poster.
+	// 640 and 960 fit inside the source; 1920 would upscale it. Plus a poster.
 	if len(ladder) != 3 {
 		t.Fatalf("got %d renditions, want 3", len(ladder))
 	}
@@ -148,7 +148,26 @@ func TestPosterIsAWebPImageOfTheFrame(t *testing.T) {
 	}
 }
 
-func TestAVideoAlreadySmallEnoughStillGetsAPoster(t *testing.T) {
+func TestASourceAtExactlyAConfiguredWidthIsStillEncoded(t *testing.T) {
+	source := testVideo(t, 960, 540, "1")
+
+	ladder, err := Ladder(context.Background(), source, Options{
+		Widths: []int{960, 1920},
+		Preset: "ultrafast",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-encoding at the size it already is remains the point: the saving is
+	// the bitrate, not the pixel count.
+	if len(ladder) != 2 || ladder[0].Name != "w960" {
+		t.Fatalf("got %d renditions starting with %q, want w960 and a poster",
+			len(ladder), ladder[0].Name)
+	}
+}
+
+func TestASourceNarrowerThanEveryWidthIsEncodedAtItsOwn(t *testing.T) {
 	source := testVideo(t, 320, 240, "1")
 
 	ladder, err := Ladder(context.Background(), source, Options{
@@ -159,8 +178,11 @@ func TestAVideoAlreadySmallEnoughStillGetsAPoster(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(ladder) != 1 || ladder[0].Name != PosterName {
-		t.Fatalf("got %d renditions, want only the poster", len(ladder))
+	if len(ladder) != 2 {
+		t.Fatalf("got %d renditions, want an encode and a poster", len(ladder))
+	}
+	if ladder[0].Name != "w320" || ladder[0].Width != 320 {
+		t.Errorf("first rendition is %q at %dpx, want w320", ladder[0].Name, ladder[0].Width)
 	}
 }
 

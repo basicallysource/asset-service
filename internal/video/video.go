@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 
@@ -110,9 +111,14 @@ func Supported(contentType string) bool {
 }
 
 // Ladder reads the video at path and returns its derived forms, smallest
-// first, with the poster last. A video smaller than every width still gets a
-// poster: the point of a poster is that a browser can show something without
-// downloading the video at all, which is true at any size.
+// first, with the poster last.
+//
+// Every configured width no wider than the source is encoded, and a source
+// narrower than all of them is encoded once at its own width. Unlike an image,
+// re-encoding a video at the size it already is remains the point of the
+// exercise: what comes off a camera is tens of megabytes a minute, and the
+// same frames at the same size are a tenth of that. What is never done is
+// upscaling, which invents detail and charges for it.
 func Ladder(ctx context.Context, path string, opts Options) ([]Rendition, error) {
 	if !Available() {
 		return nil, fmt.Errorf("%w: ffmpeg is not installed", ErrUnsupported)
@@ -145,10 +151,7 @@ func Ladder(ctx context.Context, path string, opts Options) ([]Rendition, error)
 	defer os.RemoveAll(work)
 
 	var ladder []Rendition
-	for _, width := range opts.Widths {
-		if width >= source.Width {
-			continue
-		}
+	for _, width := range widthsFor(source.Width, opts.Widths) {
 		rendition, err := encode(ctx, path, filepath.Join(work, fmt.Sprintf("w%d.mp4", width)), width, source, opts)
 		if err != nil {
 			return nil, err
@@ -173,6 +176,25 @@ func Dimensions(ctx context.Context, path string) (int, int, error) {
 		return 0, 0, err
 	}
 	return probed.Width, probed.Height, nil
+}
+
+// widthsFor picks the widths to encode at, ascending. An even width, because
+// H.264 in yuv420p cannot have an odd one.
+func widthsFor(sourceWidth int, configured []int) []int {
+	var widths []int
+	for _, width := range configured {
+		if width <= sourceWidth {
+			widths = append(widths, width)
+		}
+	}
+	if len(widths) == 0 && sourceWidth > 1 {
+		// Narrower than anything configured. Encode it at its own size rather
+		// than serve a camera's file: the saving here is the codec and the
+		// bitrate, not the number of pixels.
+		widths = []int{sourceWidth - sourceWidth%2}
+	}
+	sort.Ints(widths)
+	return widths
 }
 
 // source is what probing a file tells us about it.
