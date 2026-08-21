@@ -55,7 +55,7 @@ func (db *DB) InsertRendition(ctx context.Context, r Rendition) error {
 func (db *DB) RenditionsFor(ctx context.Context, assetKey string) ([]Rendition, error) {
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT asset_key, name, key, content_type, width, height, size, digest, created_at
-		FROM renditions WHERE asset_key = ? ORDER BY width`, assetKey)
+		FROM renditions WHERE asset_key = ? ORDER BY width, name`, assetKey)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: renditions of %s: %w", assetKey, err)
 	}

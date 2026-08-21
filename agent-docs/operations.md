@@ -22,19 +22,43 @@ one restart at a time.
 | `ASSET_MAX_UPLOAD_BYTES` | `256MiB` | Accepts `1048576` or `256MiB`. |
 | `ASSET_UPLOAD_TIMEOUT` | `30m` | How long a body may take to arrive. |
 | `ASSET_SIGNED_URL_TTL` | `15m` | Lifetime of a private asset's URL. |
-| `ASSET_RENDITIONS` | `true` | Produce derived images at all. |
+| `ASSET_RENDITIONS` | `true` | Produce derived forms at all. |
 | `ASSET_RENDITION_WIDTHS` | `320,640,1024,1600,2048` | Widths to produce, below the original's own width. |
 | `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
 | `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
+| `ASSET_VIDEO_WIDTHS` | `960,1920` | Widths to encode video at, below the source's own width. |
+| `ASSET_VIDEO_CRF` | `26` | H.264 quality, 0-51, lower being better and larger. |
+| `ASSET_VIDEO_PRESET` | `medium` | libx264 speed against size. `veryfast` on a busy host; `slow` if the bytes matter more than the wait. |
 | `ASSET_GITHUB_CLIENT_ID` | none | Enables sign-in. A device-flow client id, which is public by design -- there is no secret. Empty means this service issues no credentials and an operator mints them on the host. |
 | `ASSET_ADMIN_GITHUB_LOGINS` | none | Comma-separated GitHub logins that get full rights when they sign in. This is how the people who run it bootstrap without shell access. |
 | `ASSET_CLIENT_IP_HEADER` | none | The header a proxy in front of this service sets to the real client address, e.g. `CF-Connecting-IP`. Empty trusts none, which is the only safe default -- any caller can send a header. |
 
-Rendition work runs in the service's own process, one image at a time. On a
-host shared with something else, that is the setting that matters: resizing
-will use everything it is given, and one worker keeps it a good neighbour. A
-2048px ladder off a 24-megapixel photograph takes a few seconds of one core.
+Rendition work runs in the service's own process, one asset at a time. On a
+host shared with something else, that is the thing that matters: resizing and
+transcoding will both use everything they are given, and one worker keeps them
+a good neighbour. A 2048px ladder off a 24-megapixel photograph takes a few
+seconds of one core. A minute of 4K video takes minutes of one core -- ffmpeg
+is pinned to a single thread on purpose, so a busy queue costs one core and not
+the machine. `ASSET_VIDEO_PRESET=veryfast` trades perhaps a third more bytes
+for a small fraction of the time.
+
+**Video needs ffmpeg and ffprobe on `PATH`.** The image ships with them. Where
+they are missing the service still runs and video simply has no derived forms,
+which is what it did before it could transcode.
+
+## Measuring assets stored before dimensions existed
+
+A manifest reports the original's pixel size, measured at upload. Assets stored
+before that was true have zeros. On the host, once:
+
+```sh
+asset-service measure
+```
+
+It reads each unmeasured asset back out of storage, measures it, and records
+it. It is bounded per run, safe to repeat, and touches nothing that already has
+dimensions.
 
 ## Sign-in
 

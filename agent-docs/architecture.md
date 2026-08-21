@@ -88,12 +88,39 @@ rejected at the edge. Whether a private asset exists is itself private, so an
 unauthorised read gets the same 404 a missing asset gets.
 
 **Derived forms are produced in the background, never during an upload.**
-Re-encoding a large photograph takes seconds, and an upload that waited for it
-would time out on a slow connection for a reason unrelated to the upload. An
-image is queued, a single worker builds its ladder, and the manifest says
-whether that has finished. One worker at a time is deliberate: this usually
-runs beside other services on a small machine, and image resizing will take
-every core it is offered.
+Re-encoding a large photograph takes seconds and transcoding a video takes
+minutes, and an upload that waited for that would time out on a slow connection
+for a reason unrelated to the upload. The asset is queued, a single worker
+builds its ladder, and the manifest says whether that has finished. One worker
+at a time is deliberate: this usually runs beside other services on a small
+machine, and both resizing and transcoding will take every core they are
+offered. Encoding is pinned to one thread for the same reason.
+
+**Video is stored as it arrives and served as something a browser should
+download.** The upload is the camera's own file; the ladder is H.264 in MP4 at
+a couple of widths, plus a still from a second in so a page can show something
+before anyone presses play. A client tells the still from the encodes by
+content type. This is the one place the service depends on a program it did not
+write: there is no Go H.264 encoder worth having, so `internal/video` drives
+ffmpeg, and the runtime image is Alpine with ffmpeg in it rather than a
+distroless image with nothing in it. That trade is real and was made on
+purpose. Where ffmpeg is absent the service still runs and video simply has no
+derived forms, which is what it did before.
+
+**One place decides what has derived forms.** `internal/derive` dispatches on
+content type for both questions -- may this be queued, and how is it made --
+so the upload path and the worker cannot disagree about what the service can
+do. A new kind of asset is a backend there and nothing else.
+
+**A manifest says how big the original is.** Width and height of the bytes as
+uploaded, measured once at upload and stored beside them. It is what lets a
+page reserve the right space before an image arrives, which is the difference
+between a page that settles and one that jumps. Deriving it from a rendition is
+not the same answer: the ladder tops out below what a camera produces, and an
+asset too small to shrink has no ladder to read a shape from at all. This is
+the only thing about a stored asset that is ever written after the fact, and
+only because it is a property of bytes that never change -- `measure` records
+it for assets stored before the service could.
 
 **Releases are automatic and versioned by derivation.** Merging to `main` runs
 the tests, builds an image, then tags the next patch version and publishes a
@@ -111,6 +138,8 @@ internal/auth          who is calling, and what they may do
 internal/objstore      S3-compatible storage: SigV4, a client, an in-memory double
 internal/catalog       SQLite: assets, renditions, the job queue, API keys
 internal/imaging       bytes in, smaller bytes out -- no storage, no database
+internal/video         the same for video, by driving ffmpeg
+internal/derive        which of those applies, and the one place that decides
 internal/identity      proving who somebody is, over GitHub's device flow
 internal/policy        what an account may do, in numbers, in one place
 internal/assets        the domain: hash, name, store, resolve
@@ -120,20 +149,20 @@ deploy                 how a host runs and updates it
 ```
 
 The dependency direction is one-way: `api` -> `assets` -> {`objstore`,
-`catalog`}, with `httpx`, `config` and `imaging` as leaves. `auth` knows nothing
-about assets, `assets` knows nothing about HTTP, and `imaging` knows nothing
-about anything -- which is why the expensive part of this service is testable
-without any of the rest of it.
+`catalog`}, with `httpx`, `config` and `derive` as leaves. `auth` knows nothing
+about assets, `assets` knows nothing about HTTP, and `imaging` and `video` know
+nothing about anything but bytes and files -- which is why the expensive part of
+this service is testable without any of the rest of it.
 
 ## Not built yet, and where it goes
 
 These are expected. Each names the seam it arrives at, so the first one does not
 require rearranging the service.
 
-**More kinds of derived form.** Images get a WebP ladder. Video wants a poster
-frame and transcodes, which needs ffmpeg and a much larger CPU budget than
-resizing does; PDFs want a first-page thumbnail. Each is a new producer behind
-the same queue, table and manifest.
+**More kinds of derived form.** Images get a WebP ladder and video gets MP4
+encodes and a poster. A PDF wants a first-page thumbnail; an STL wants a
+render. Each is a backend in `internal/derive` behind the same queue, table and
+manifest.
 
 **More identity providers.** `auth.Authenticator` takes the whole request and
 returns a `Principal`, and `internal/identity` proves who somebody is. A second

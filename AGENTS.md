@@ -18,8 +18,10 @@ internal/catalog       SQLite: assets and API keys, with migrations
 internal/identity      proving who somebody is, over GitHub's device flow
 internal/policy        what an account may do, in numbers, in one place
 internal/imaging       bytes in, smaller bytes out -- no storage, no database
+internal/video         the same for video, by driving ffmpeg
+internal/derive        which of those applies, and the one place that decides
 internal/assets        the domain: hash, name, store, resolve
-internal/renditions    the worker that builds image ladders
+internal/renditions    the worker that builds ladders
 internal/api           routes, their access rules, and the sign-in page
 deploy                 how a host runs and updates it
 ```

@@ -12,6 +12,7 @@ import (
 
 	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/renditions"
+	"github.com/basicallysource/asset-service/internal/video"
 )
 
 // Prefix every variable this service reads.
@@ -40,6 +41,13 @@ type Config struct {
 	RenditionQuality  int
 	RenditionPoll     time.Duration
 	RenditionAttempts int
+
+	// VideoWidths, VideoCRF and VideoPreset describe the encodes made for an
+	// uploaded video. The preset is the dial an operator on a shared machine
+	// actually wants: it trades encode time against file size.
+	VideoWidths []int
+	VideoCRF    int
+	VideoPreset string
 
 	// GitHubClientID enables sign-in. Empty means this service issues no
 	// credentials of its own and an operator mints them on the host. It is a
@@ -90,6 +98,13 @@ func Load() (Config, error) {
 	cfg.RenditionQuality = number("RENDITION_QUALITY", imaging.DefaultQuality, 1, 100, &problems)
 	cfg.RenditionPoll = duration("RENDITION_POLL", renditions.DefaultPoll, &problems)
 	cfg.RenditionAttempts = number("RENDITION_ATTEMPTS", renditions.DefaultMaxAttempts, 1, 100, &problems)
+	cfg.VideoWidths = widths("VIDEO_WIDTHS", video.DefaultWidths, &problems)
+	cfg.VideoCRF = number("VIDEO_CRF", video.DefaultCRF, 0, 51, &problems)
+	if preset := lookup("VIDEO_PRESET"); preset != "" {
+		cfg.VideoPreset = preset
+	} else {
+		cfg.VideoPreset = video.DefaultPreset
+	}
 
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("config: %s", strings.Join(problems, "; "))

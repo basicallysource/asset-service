@@ -15,6 +15,7 @@ import (
 
 	"github.com/basicallysource/asset-service/internal/assets"
 	"github.com/basicallysource/asset-service/internal/catalog"
+	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/objstore"
 )
@@ -63,7 +64,7 @@ func newFixture(t *testing.T) *fixture {
 		},
 		worker: &Worker{
 			Catalog: db, Store: store, Logger: quiet,
-			Options:  imaging.Options{Widths: []int{320, 640}},
+			Options:  derive.Options{Image: imaging.Options{Widths: []int{320, 640}}},
 			MaxBytes: 8 << 20,
 		},
 	}

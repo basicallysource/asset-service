@@ -18,10 +18,12 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/config"
+	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/identity"
 	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/objstore"
 	"github.com/basicallysource/asset-service/internal/renditions"
+	"github.com/basicallysource/asset-service/internal/video"
 )
 
 // version is stamped at build time with -ldflags "-X main.version=...".
@@ -55,6 +57,8 @@ func run(args []string) error {
 		return keysCommand(args)
 	case "accounts":
 		return accountsCommand(args)
+	case "measure":
+		return measureCommand(args)
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -88,6 +92,9 @@ Usage:
   asset-service accounts trust <handle>      raise an account's limits
   asset-service accounts admin <handle>      let an account manage keys
   asset-service accounts block <handle>      stop an account uploading
+
+  asset-service measure                      record the pixel size of assets
+                                             stored before it was measured
 
   asset-service version                      print the build version
 
@@ -156,13 +163,17 @@ func serve() error {
 
 	if cfg.Renditions {
 		worker := &renditions.Worker{
-			Catalog:     db,
-			Store:       store,
-			Options:     imaging.Options{Widths: cfg.RenditionWidths, Quality: cfg.RenditionQuality},
+			Catalog: db,
+			Store:   store,
+			Options: derive.Options{
+				Image: imaging.Options{Widths: cfg.RenditionWidths, Quality: cfg.RenditionQuality},
+				Video: video.Options{Widths: cfg.VideoWidths, CRF: cfg.VideoCRF, Preset: cfg.VideoPreset},
+			},
 			Logger:      logger,
 			MaxAttempts: cfg.RenditionAttempts,
 			MaxBytes:    cfg.MaxUploadBytes,
 			Poll:        cfg.RenditionPoll,
+			WorkDir:     cfg.SpoolDir,
 		}
 		// The upload path pokes the worker so a new image starts being
 		// processed at once rather than at the next poll.

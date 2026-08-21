@@ -28,12 +28,20 @@ const deliveryMaxAge = "86400"
 // RenditionsStatus says whether the ladder is finished: "ready" when it is,
 // "pending" while derived forms are still being produced, "failed" if that was
 // given up on, and "none" for a kind of asset that has no derived forms.
+//
+// Width and Height are the original's own pixel size, present for the kinds of
+// asset that have one. They are what lets a page reserve the right space
+// before an image arrives, so use them rather than a rendition's: the ladder
+// tops out below what a camera produces, and an asset too small to shrink has
+// no ladder to read a shape from at all.
 type manifest struct {
 	Key              string      `json:"key"`
 	Namespace        string      `json:"namespace"`
 	Digest           string      `json:"digest"`
 	Size             int64       `json:"size"`
 	ContentType      string      `json:"content_type"`
+	Width            int         `json:"width,omitempty"`
+	Height           int         `json:"height,omitempty"`
 	Filename         string      `json:"filename"`
 	Visibility       string      `json:"visibility"`
 	CreatedAt        time.Time   `json:"created_at"`
@@ -272,6 +280,8 @@ func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error
 	ladder = append(ladder, rendition{
 		Name:        original,
 		ContentType: a.ContentType,
+		Width:       a.Width,
+		Height:      a.Height,
 		Size:        a.Size,
 		URL:         url,
 	})
@@ -282,6 +292,8 @@ func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error
 		Digest:           "sha256:" + a.Digest,
 		Size:             a.Size,
 		ContentType:      a.ContentType,
+		Width:            a.Width,
+		Height:           a.Height,
 		Filename:         a.Filename,
 		Visibility:       a.Visibility,
 		CreatedAt:        a.CreatedAt,

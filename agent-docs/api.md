@@ -116,6 +116,8 @@ The manifest. Public assets need no credential; private ones need
   "digest": "sha256:3f7a91c2b04e...",
   "size": 48213,
   "content_type": "image/png",
+  "width": 1600,
+  "height": 1200,
   "filename": "diagram.png",
   "visibility": "public",
   "created_at": "2026-08-21T04:12:07Z",
@@ -133,11 +135,23 @@ The manifest. Public assets need no credential; private ones need
 }
 ```
 
+`width` and `height` are the original's own pixel size, present for the kinds
+of asset that have one. Use them to reserve space before the bytes arrive --
+`<img width height>` or an `aspect-ratio` box -- so the page does not jump when
+they do. Take them from here rather than from a rendition: the ladder tops out
+below what a camera produces, and an asset too small to shrink has no ladder to
+read a shape from. Zero means the service could not measure it.
+
 `renditions` is the ladder: every form of this asset that can be fetched,
 smallest first, with the bytes as uploaded last. Walk it for the first rung
 wide enough for where you are showing the image, and fall back to the last
 entry. Read it rather than assuming what is in it -- an image too small to
 shrink usefully has a ladder of one.
+
+An image's rungs are all WebP. A video's are H.264 in MP4, plus one still named
+`poster`. **Tell them apart by `content_type`, not by name**: the poster has a
+width like any other rung, and treating it as a video would hand a browser an
+image where it expected something to play.
 
 `renditions_status` says whether the ladder is finished:
 
@@ -146,11 +160,14 @@ shrink usefully has a ladder of one.
 | `ready` | Nothing more is coming. |
 | `pending` | Derived forms are queued or being produced. Poll, or use what is there. |
 | `failed` | Producing them was given up on. What is listed is all there will be. |
-| `none` | This kind of asset has no derived forms -- an STL, a zip, a video. |
+| `none` | This kind of asset has no derived forms -- an STL, a zip, a PDF. |
 
-Images are queued the moment they are uploaded, so a manifest fetched straight
-after an upload usually says `pending`. Widths are produced only below the
-original's own width: nothing is ever upscaled.
+Images and videos are queued the moment they are uploaded, so a manifest
+fetched straight after an upload usually says `pending`. An image takes
+seconds; a video is transcoded one at a time and takes as long as that takes.
+Widths are produced only below the original's own width: nothing is ever
+upscaled. A video too small to shrink still gets a poster, because showing a
+still without downloading the video is worth having at any size.
 
 `url_expires` says whether `url` is stable or time-limited. A stable URL can be
 kept forever. An expiring one must be fetched again, not cached.

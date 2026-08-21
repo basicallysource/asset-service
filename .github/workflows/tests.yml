@@ -20,6 +20,15 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      # ffmpeg, because the image ships with it and the video tests skip
+      # themselves without it -- a suite that silently tests less than what
+      # runs is worse than one that takes an extra minute.
+      - name: ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
       - name: Formatting
         run: |
           unformatted=$(gofmt -l .)

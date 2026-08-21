@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/basicallysource/asset-service/internal/catalog"
-	"github.com/basicallysource/asset-service/internal/imaging"
+	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/objstore"
 )
 
@@ -141,17 +141,22 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 		return PutResult{}, err
 	}
 
+	resolvedType := contentType(req.ContentType, key)
+	width, height := s.measure(ctx, body.file.Name(), resolvedType)
+
 	asset := catalog.Asset{
 		Key:         key,
 		Namespace:   req.Namespace,
 		Digest:      body.Digest,
 		Size:        body.Size,
-		ContentType: contentType(req.ContentType, key),
+		ContentType: resolvedType,
 		Filename:    req.Filename,
 		Visibility:  visibility,
 		CreatedAt:   s.now(),
 		CreatedBy:   req.By,
 		AccountID:   req.AccountID,
+		Width:       width,
+		Height:      height,
 	}
 
 	created, err := s.Catalog.InsertAsset(ctx, asset)
@@ -172,11 +177,24 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 	return PutResult{Asset: asset, Created: true}, nil
 }
 
+// measure reads the asset's pixel size off the spooled body, so a manifest can
+// say how tall an image is before a page has downloaded it. It never fails an
+// upload: bytes that will not measure still store fine, and a zero here means
+// nothing more than "not known".
+func (s *Service) measure(ctx context.Context, path, contentType string) (int, int) {
+	width, height, err := derive.Dimensions(ctx, path, contentType)
+	if err != nil {
+		s.logger().Warn("measure asset", "content_type", contentType, "error", err)
+		return 0, 0
+	}
+	return width, height
+}
+
 // queue asks for an asset's derived forms. It never fails an upload: the bytes
 // are stored and the manifest already answers for them, so a queue that is
 // briefly unwritable is a delay, not a lost asset.
 func (s *Service) queue(ctx context.Context, asset catalog.Asset) {
-	if !imaging.Supported(asset.ContentType) {
+	if !derive.Supported(asset.ContentType) {
 		return
 	}
 	if err := s.Catalog.Enqueue(ctx, asset.Key, s.now()); err != nil {
@@ -190,7 +208,7 @@ func (s *Service) queue(ctx context.Context, asset catalog.Asset) {
 
 // Ladder returns an asset's derived forms and whether more are coming.
 func (s *Service) Ladder(ctx context.Context, asset catalog.Asset) ([]catalog.Rendition, string, error) {
-	if !imaging.Supported(asset.ContentType) {
+	if !derive.Supported(asset.ContentType) {
 		return nil, LadderNone, nil
 	}
 

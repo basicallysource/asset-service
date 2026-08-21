@@ -101,26 +101,65 @@ func Ladder(src []byte, opts Options) ([]Rendition, error) {
 		if width >= bounds.Dx() {
 			continue
 		}
-		height := bounds.Dy() * width / bounds.Dx()
-		if height < 1 {
-			height = 1
+		rendition, err := render(decoded, width, opts.Quality)
+		if err != nil {
+			return nil, err
 		}
-
-		// CatmullRom because these are photographs being shrunk a long way,
-		// where a cheaper filter shows it.
-		resized := image.NewRGBA(image.Rect(0, 0, width, height))
-		draw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, draw.Over, nil)
-
-		var out bytes.Buffer
-		if err := webp.Encode(&out, resized, webp.Options{Quality: opts.Quality}); err != nil {
-			return nil, fmt.Errorf("imaging: encode w%d: %w", width, err)
-		}
-		ladder = append(ladder, Rendition{
-			Name:   fmt.Sprintf("w%d", width),
-			Width:  width,
-			Height: height,
-			Bytes:  out.Bytes(),
-		})
+		ladder = append(ladder, rendition)
 	}
 	return ladder, nil
+}
+
+// Still encodes one image as WebP under a given name, shrinking it to at most
+// width. Unlike Ladder it always produces something: it is for a single
+// derived image -- a video's poster frame -- where "the original is already
+// the right size" means encode it as it is, not skip it.
+func Still(src []byte, name string, width, quality int) (Rendition, error) {
+	if quality <= 0 || quality > 100 {
+		quality = DefaultQuality
+	}
+
+	decoded, _, err := image.Decode(bytes.NewReader(src))
+	if err != nil {
+		return Rendition{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	bounds := decoded.Bounds()
+	if bounds.Dx() < 1 || bounds.Dy() < 1 {
+		return Rendition{}, fmt.Errorf("%w: zero-sized image", ErrUnsupported)
+	}
+	if width <= 0 || width > bounds.Dx() {
+		width = bounds.Dx()
+	}
+
+	rendition, err := render(decoded, width, quality)
+	if err != nil {
+		return Rendition{}, err
+	}
+	rendition.Name = name
+	return rendition, nil
+}
+
+// render resizes to width and encodes, preserving the aspect ratio.
+func render(decoded image.Image, width, quality int) (Rendition, error) {
+	bounds := decoded.Bounds()
+	height := bounds.Dy() * width / bounds.Dx()
+	if height < 1 {
+		height = 1
+	}
+
+	// CatmullRom because these are photographs being shrunk a long way, where
+	// a cheaper filter shows it.
+	resized := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, draw.Over, nil)
+
+	var out bytes.Buffer
+	if err := webp.Encode(&out, resized, webp.Options{Quality: quality}); err != nil {
+		return Rendition{}, fmt.Errorf("imaging: encode w%d: %w", width, err)
+	}
+	return Rendition{
+		Name:   fmt.Sprintf("w%d", width),
+		Width:  width,
+		Height: height,
+		Bytes:  out.Bytes(),
+	}, nil
 }

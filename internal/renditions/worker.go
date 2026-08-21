@@ -1,11 +1,12 @@
-// Package renditions produces the smaller copies of an uploaded image, in the
+// Package renditions produces the smaller copies of an uploaded asset, in the
 // background, one at a time.
 //
 // It is deliberately not part of the upload. Re-encoding a large photograph
-// takes seconds, and an upload that waited for it would be an upload that
-// times out on a slow connection for a reason that has nothing to do with the
-// upload. The manifest says whether a ladder is still being built, so a caller
-// that cares can wait and one that does not can use the original.
+// takes seconds and transcoding a video takes minutes, and an upload that
+// waited for that would be an upload that times out on a slow connection for a
+// reason that has nothing to do with the upload. The manifest says whether a
+// ladder is still being built, so a caller that cares can wait and one that
+// does not can use the original.
 package renditions
 
 import (
@@ -17,12 +18,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/basicallysource/asset-service/internal/assets"
 	"github.com/basicallysource/asset-service/internal/catalog"
-	"github.com/basicallysource/asset-service/internal/imaging"
+	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/objstore"
 )
 
@@ -37,14 +39,18 @@ const (
 // Worker turns queued assets into ladders.
 //
 // One at a time, on purpose: this usually runs beside other services on a
-// small machine, and image resizing will take every core it is offered. A
-// queue that drains slightly slower is a much better neighbour than one that
-// makes everything else on the host stutter.
+// small machine, and both resizing and transcoding will take every core they
+// are offered. A queue that drains slightly slower is a much better neighbour
+// than one that makes everything else on the host stutter.
 type Worker struct {
 	Catalog *catalog.DB
 	Store   objstore.Store
-	Options imaging.Options
+	Options derive.Options
 	Logger  *slog.Logger
+
+	// WorkDir is where an original is staged while it is being read. Empty
+	// means the system temporary directory.
+	WorkDir string
 
 	// MaxAttempts is how many times a failing asset is retried before it is
 	// left alone. MaxBytes bounds what is read back out of storage.
@@ -154,27 +160,26 @@ func (w *Worker) build(ctx context.Context, key string) error {
 	if err != nil {
 		return err
 	}
-	if !imaging.Supported(asset.ContentType) {
+	if !derive.Supported(asset.ContentType) {
 		return nil
 	}
 
-	body, err := w.Store.Get(ctx, asset.Key)
+	// Staged on disk rather than held in memory: a video is transcoded by a
+	// tool that reads files, and an original large enough to be worth
+	// shrinking is large enough not to want two copies of in a small process.
+	original, err := w.stage(ctx, asset.Key)
 	if err != nil {
 		return err
 	}
-	original, err := io.ReadAll(io.LimitReader(body, w.MaxBytes))
-	body.Close()
-	if err != nil {
-		return fmt.Errorf("read %s: %w", asset.Key, err)
-	}
+	defer os.Remove(original)
 
 	started := w.now()
-	ladder, err := imaging.Ladder(original, w.Options)
+	ladder, err := derive.Ladder(ctx, original, asset.ContentType, w.Options)
 	if err != nil {
-		// Bytes that claim to be an image and are not will never decode, so
-		// there is nothing to come back for.
-		if errors.Is(err, imaging.ErrUnsupported) {
-			w.Logger.Warn("renditions: not a readable image", "asset", asset.Key, "error", err)
+		// Bytes that claim to be an image or a video and are not will never
+		// decode, so there is nothing to come back for.
+		if errors.Is(err, derive.ErrUnsupported) {
+			w.Logger.Warn("renditions: not readable", "asset", asset.Key, "error", err)
 			return nil
 		}
 		return err
@@ -191,11 +196,36 @@ func (w *Worker) build(ctx context.Context, key string) error {
 	return nil
 }
 
-func (w *Worker) store(ctx context.Context, asset catalog.Asset, r imaging.Rendition) error {
+// stage copies an asset's bytes out of storage into a temporary file and
+// returns its path. The caller removes it.
+func (w *Worker) stage(ctx context.Context, key string) (string, error) {
+	body, err := w.Store.Get(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
+
+	file, err := os.CreateTemp(w.WorkDir, "original-")
+	if err != nil {
+		return "", fmt.Errorf("stage %s: %w", key, err)
+	}
+	if _, err := io.Copy(file, io.LimitReader(body, w.MaxBytes)); err != nil {
+		file.Close()
+		os.Remove(file.Name())
+		return "", fmt.Errorf("stage %s: %w", key, err)
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(file.Name())
+		return "", fmt.Errorf("stage %s: %w", key, err)
+	}
+	return file.Name(), nil
+}
+
+func (w *Worker) store(ctx context.Context, asset catalog.Asset, r derive.Rendition) error {
 	sum := sha256.Sum256(r.Bytes)
 	digest := hex.EncodeToString(sum[:])
 
-	key, err := assets.RenditionKey(asset.Namespace, asset.Filename, r.Name, digest, imaging.OutputExtension)
+	key, err := assets.RenditionKey(asset.Namespace, asset.Filename, r.Name, digest, r.Extension)
 	if err != nil {
 		return err
 	}
@@ -208,7 +238,7 @@ func (w *Worker) store(ctx context.Context, asset catalog.Asset, r imaging.Rendi
 		if err := w.Store.Put(ctx, objstore.PutRequest{
 			Key:         key,
 			Size:        int64(len(r.Bytes)),
-			ContentType: imaging.OutputContentType,
+			ContentType: r.ContentType,
 			Digest:      digest,
 			Public:      asset.Visibility == catalog.VisibilityPublic,
 		}, bytes.NewReader(r.Bytes)); err != nil {
@@ -220,7 +250,7 @@ func (w *Worker) store(ctx context.Context, asset catalog.Asset, r imaging.Rendi
 		AssetKey:    asset.Key,
 		Name:        r.Name,
 		Key:         key,
-		ContentType: imaging.OutputContentType,
+		ContentType: r.ContentType,
 		Width:       r.Width,
 		Height:      r.Height,
 		Size:        int64(len(r.Bytes)),

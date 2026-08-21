@@ -22,10 +22,12 @@ the file. That one decision is most of the design:
 - **A key cannot lie.** The service computes the hash itself. Callers propose a
   filename, never a key.
 
-Upload an image and a ladder of WebP renditions is built for it in the
-background -- 320px through 2048px, never wider than the original. The manifest
-lists what exists and whether more is coming, so a page can ask for the
-narrowest rung that suits it instead of a four-megabyte original.
+Upload the original and the web-friendly copies are built for it in the
+background. An image gets a WebP ladder, 320px through 2048px, never wider than
+what was uploaded. A video gets H.264 MP4 encodes and a still to show before it
+plays. The manifest lists what exists, how big the original is, and whether
+more is coming, so a page can ask for the narrowest rung that suits it instead
+of a forty-megabyte file off a camera.
 
 The service does not serve bytes. It answers with a URL -- public for public
 assets, signed and expiring for private ones -- and the reader fetches from

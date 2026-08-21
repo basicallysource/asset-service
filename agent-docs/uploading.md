@@ -112,8 +112,38 @@ In HTML, hand the whole ladder to the browser and let it choose:
 ```
 
 `renditions_status` can also be `none` (this kind of file has no smaller
-copies -- an STL, a zip, a video) or `failed` (they could not be made; the
+copies -- an STL, a zip, a PDF) or `failed` (they could not be made; the
 original is still fine).
+
+The manifest also carries `width` and `height`: the original's own pixel size.
+Put them on the tag. An `<img>` with a width and a height reserves the right
+space before the image arrives, so the page does not jump when it does, and
+that is most of what a page-speed score is measuring.
+
+## 5. Upload video the same way
+
+Upload the camera's file, not something you shrank first. A video gets H.264
+MP4 encodes at a couple of widths and a still frame named `poster`, all in the
+same `renditions` list. **Sort them by `content_type`**, not by name -- the
+poster is an image and has a width like any other rung:
+
+```html
+<video controls preload="none" poster="POSTER_URL" width="1920" height="1080">
+  <source src="W960_URL"  type="video/mp4" media="(max-width: 960px)">
+  <source src="W1920_URL" type="video/mp4">
+</video>
+```
+
+`preload="none"` with a poster is the whole trick: the page shows the still and
+downloads nothing until somebody presses play.
+
+Transcoding is slower than resizing -- minutes, not seconds, and one video at a
+time -- so `renditions_status` stays `pending` for a while. The original is
+usable the moment the upload returns.
+
+A self-served account cannot upload video: an account nobody has vouched for
+may store images and nothing else. Ask whoever runs the service to raise it,
+which is the one command at the end of this page.
 
 ## What will stop you
 

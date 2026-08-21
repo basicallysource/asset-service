@@ -130,6 +130,10 @@ type Asset struct {
 	CreatedBy   string
 	// AccountID is the account whose limits this upload counted against.
 	AccountID string
+	// Width and Height are the pixel dimensions of the bytes as uploaded, for
+	// the kinds of asset that have them. Zero means not known.
+	Width  int
+	Height int
 }
 
 // ErrNotFound is returned when a lookup finds nothing.
@@ -138,12 +142,12 @@ var ErrNotFound = errors.New("catalog: not found")
 // AssetByKey returns the asset stored at key, or ErrNotFound.
 func (db *DB) AssetByKey(ctx context.Context, key string) (Asset, error) {
 	row := db.sql.QueryRowContext(ctx, `
-		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id
+		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height
 		FROM assets WHERE key = ?`, key)
 
 	var a Asset
 	var created string
-	err := row.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename, &a.Visibility, &created, &a.CreatedBy, &a.AccountID)
+	err := row.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename, &a.Visibility, &created, &a.CreatedBy, &a.AccountID, &a.Width, &a.Height)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Asset{}, ErrNotFound
 	}
@@ -159,16 +163,56 @@ func (db *DB) AssetByKey(ctx context.Context, key string) (Asset, error) {
 // and is not an error, it is the same asset.
 func (db *DB) InsertAsset(ctx context.Context, a Asset) (bool, error) {
 	res, err := db.sql.ExecContext(ctx, `
-		INSERT INTO assets (key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO assets (key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (key) DO NOTHING`,
 		a.Key, a.Namespace, a.Digest, a.Size, a.ContentType, a.Filename, a.Visibility,
-		a.CreatedAt.UTC().Format(time.RFC3339Nano), a.CreatedBy, a.AccountID)
+		a.CreatedAt.UTC().Format(time.RFC3339Nano), a.CreatedBy, a.AccountID, a.Width, a.Height)
 	if err != nil {
 		return false, fmt.Errorf("catalog: insert %s: %w", a.Key, err)
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// SetDimensions records the pixel size of an asset's bytes. It is the one
+// thing about a stored asset that can be written after the fact, and only
+// because it is a property of bytes that never change: an asset stored before
+// this service could measure it has the dimensions it always had, and this is
+// how they get recorded.
+func (db *DB) SetDimensions(ctx context.Context, key string, width, height int) error {
+	_, err := db.sql.ExecContext(ctx,
+		`UPDATE assets SET width = ?, height = ? WHERE key = ?`, width, height, key)
+	if err != nil {
+		return fmt.Errorf("catalog: set dimensions of %s: %w", key, err)
+	}
+	return nil
+}
+
+// AssetsMissingDimensions returns assets whose pixel size was never recorded,
+// oldest first. It exists for the backfill that follows adding the columns;
+// it is not a general listing.
+func (db *DB) AssetsMissingDimensions(ctx context.Context, limit int) ([]Asset, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height
+		FROM assets WHERE width = 0 ORDER BY created_at LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: assets missing dimensions: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []Asset
+	for rows.Next() {
+		var a Asset
+		var created string
+		if err := rows.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename,
+			&a.Visibility, &created, &a.CreatedBy, &a.AccountID, &a.Width, &a.Height); err != nil {
+			return nil, fmt.Errorf("catalog: read asset: %w", err)
+		}
+		a.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
 }
 
 // APIKey is a credential that may act on namespaces.
