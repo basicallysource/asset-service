@@ -36,6 +36,14 @@
     border: 1px solid transparent; background: var(--accent); color: #fff; cursor: pointer;
   }
   button.quiet { background: transparent; color: var(--muted); border-color: var(--line); }
+  /* Icon only, no chrome: it sits beside the thing it copies. */
+  button.copy {
+    background: transparent; border: 0; color: var(--muted); cursor: pointer;
+    padding: .3rem; line-height: 0; border-radius: 6px; flex: none;
+  }
+  button.copy:hover { color: var(--fg); background: var(--code); }
+  button.copy svg { width: 16px; height: 16px; display: block; }
+  .copyrow { display: flex; align-items: center; gap: .4rem; }
   button:disabled { opacity: .5; cursor: default; }
   code, .code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
@@ -45,6 +53,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 1.7rem; letter-spacing: .12em; padding: .5rem 0; user-select: all;
   }
+  .token { flex: 1 1 auto; }
   table { width: 100%; border-collapse: collapse; font-size: .92rem; }
   th { text-align: left; font-weight: 550; color: var(--muted); font-size: .82rem; }
   th, td { padding: .5rem .5rem .5rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -75,7 +84,10 @@
 
   <div id="device" class="card hidden">
     <p>Enter this code at <a id="verification" href="https://github.com/login/device" target="_blank" rel="noreferrer noopener">github.com/login/device</a>:</p>
-    <div class="usercode" id="usercode"></div>
+    <div class="copyrow">
+      <div class="usercode" id="usercode"></div>
+      <button class="copy" data-copy="#usercode" title="Copy code" aria-label="Copy code"></button>
+    </div>
     <p class="muted" id="device-status">Waiting for you to approve it…</p>
   </div>
 
@@ -83,11 +95,11 @@
     <div class="card">
       <p>Signed in as <strong id="handle"></strong> — namespace <code id="namespace"></code></p>
       <p class="muted" id="limits"></p>
-      <p>
-        <button class="quiet" id="copy">Copy token</button>
-        <button class="quiet" id="signout">Sign out</button>
-      </p>
-      <code class="token" id="token"></code>
+      <p><button class="quiet" id="signout">Sign out</button></p>
+      <div class="copyrow">
+        <code class="token" id="token"></code>
+        <button class="copy" data-copy="#token" title="Copy token" aria-label="Copy token"></button>
+      </div>
       <p class="muted">Keep it somewhere safe. It is shown once.</p>
     </div>
 
@@ -100,6 +112,56 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
+
+  // One handler for every copy button, including the ones htmx swaps in
+  // later: a button says which element holds the text, and the icon is drawn
+  // here so no template has to carry a lump of SVG.
+  const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  const DONE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  const drawIcons = (root) => {
+    for (const button of (root || document).querySelectorAll("button.copy")) {
+      if (!button.innerHTML.trim()) button.innerHTML = COPY_ICON;
+    }
+  };
+
+  // Some browsers refuse the clipboard API depending on focus, permission or
+  // how the click arrived. Falling back to a selection and the old command
+  // covers those; if even that fails the text is left selected, so the worst
+  // case is that the person presses copy themselves.
+  const copy = async (node) => {
+    const text = node.textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    }
+  };
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("button.copy");
+    if (!button) return;
+    const source = document.querySelector(button.dataset.copy);
+    if (!source) return;
+
+    if (!(await copy(source))) return;
+    button.innerHTML = DONE_ICON;
+    setTimeout(() => (button.innerHTML = COPY_ICON), 1400);
+  });
+
+  drawIcons();
+  // Fragments arrive with empty copy buttons; fill them in as they land.
+  document.body.addEventListener("htmx:afterSwap", (event) => drawIcons(event.target));
   const store = window.sessionStorage;
 
   // The token lives in this tab and is attached to requests by hand. Nothing
@@ -182,12 +244,6 @@
     }
     showAccount(await res.json());
   };
-
-  $("copy").addEventListener("click", () => {
-    navigator.clipboard.writeText($("token").textContent);
-    $("copy").textContent = "Copied";
-    setTimeout(() => ($("copy").textContent = "Copy token"), 1500);
-  });
 
   $("signout").addEventListener("click", () => {
     store.removeItem("asset_token");

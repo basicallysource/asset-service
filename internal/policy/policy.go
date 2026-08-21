@@ -42,9 +42,11 @@ var Unlimited = Limits{}
 func For(tier string) Limits {
 	switch tier {
 	case catalog.TierAdmin:
-		// Whoever runs this service. The same as having a shell on the host,
-		// which is the alternative.
-		return Unlimited
+		// Whoever runs this service: no ceiling on what they may do, because
+		// the alternative is a shell on the host. A time limit all the same --
+		// a credential handed out by a web page should not outlive anybody's
+		// memory of asking for it.
+		return Limits{TokenLifetime: 365 * 24 * time.Hour}
 
 	case catalog.TierTrusted:
 		// Someone an operator has vouched for. Still bounded, because a

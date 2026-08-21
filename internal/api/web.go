@@ -28,11 +28,18 @@ var keysTemplate = template.Must(template.ParseFS(webFiles, "web/keys.html"))
 type keysView struct {
 	Keys     []keyRow
 	CanGrant bool
-	Minted   *mintedKey
-	Error    string
+	// Manages is whether to show the key section at all. Somebody who can
+	// neither mint nor see a key has no use for an empty table titled "keys
+	// you can manage".
+	Manages   bool
+	Namespace string
+	Minted    *mintedKey
+	Error     string
 }
 
 type keyRow struct {
+	// Index makes each row's copy button point at its own name.
+	Index   int
 	Name    string
 	Scopes  string
 	Expires string
@@ -42,6 +49,16 @@ type keyRow struct {
 type mintedKey struct {
 	Name  string
 	Token string
+}
+
+// firstNamespace is where this principal can write, for telling them so.
+func firstNamespace(principal *auth.Principal) string {
+	for _, scope := range principal.Scopes {
+		if action, namespace, ok := strings.Cut(scope, ":"); ok && action == auth.ActionWrite {
+			return namespace
+		}
+	}
+	return ""
 }
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +181,12 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 		return
 	}
 
-	view := keysView{Minted: minted, Error: message, CanGrant: principal.Holds(auth.ActionAdmin)}
+	view := keysView{
+		Minted:    minted,
+		Error:     message,
+		CanGrant:  principal.Holds(auth.ActionAdmin),
+		Namespace: firstNamespace(principal),
+	}
 
 	keys, err := s.Catalog.ListAPIKeys(r.Context())
 	if err != nil {
@@ -175,6 +197,7 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 			continue
 		}
 		row := keyRow{
+			Index:   len(view.Keys),
 			Name:    key.Name,
 			Scopes:  strings.Join(key.Scopes, " "),
 			Expires: "never",
@@ -185,6 +208,8 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 		}
 		view.Keys = append(view.Keys, row)
 	}
+
+	view.Manages = view.CanGrant || len(view.Keys) > 0
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := keysTemplate.ExecuteTemplate(w, "keys", view); err != nil {

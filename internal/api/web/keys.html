@@ -1,10 +1,14 @@
 {{define "keys"}}
+{{if .Manages}}
 <h2>Keys you can manage</h2>
 
 {{if .Minted}}
 <div class="card">
   <p><strong>{{.Minted.Name}}</strong> — copy it now, it is shown once.</p>
-  <code class="token">{{.Minted.Token}}</code>
+  <div class="copyrow">
+    <code class="token" id="minted-token">{{.Minted.Token}}</code>
+    <button class="copy" data-copy="#minted-token" title="Copy token" aria-label="Copy token"></button>
+  </div>
 </div>
 {{end}}
 
@@ -37,7 +41,13 @@
   <tbody>
   {{range .Keys}}
     <tr>
-      <td>{{.Name}}{{if .Revoked}} <span class="muted">(revoked)</span>{{end}}</td>
+      <td>
+        <span class="copyrow">
+          <span id="key-name-{{.Index}}">{{.Name}}</span>
+          <button class="copy" data-copy="#key-name-{{.Index}}" title="Copy name" aria-label="Copy name"></button>
+        </span>
+        {{if .Revoked}}<span class="muted">revoked</span>{{end}}
+      </td>
       <td><code>{{.Scopes}}</code></td>
       <td class="muted">{{.Expires}}</td>
       <td>
@@ -54,6 +64,11 @@
 </table>
 {{else}}
 <p class="muted">No keys yet.</p>
+{{end}}
+
+{{else}}
+<p class="muted">Upload to <code>{{.Namespace}}</code> with the token above. See
+the service's documentation for how.</p>
 {{end}}
 
 {{if .Error}}<p class="bad">{{.Error}}</p>{{end}}
