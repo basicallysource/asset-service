@@ -1,14 +1,11 @@
-# The binary is static, so it does not care what runtime image carries it. Two
-# things make it static and both are load-bearing:
+# The binary is static, so it does not care what runtime image carries it.
+# CGO_ENABLED=0 is what makes it so: the SQLite driver is pure Go and every
+# image codec is either the standard library or golang.org/x/image, so nothing
+# here needs a C toolchain or a shared library at runtime.
 #
-#   CGO_ENABLED=0    the SQLite driver is pure Go, so nothing needs a C
-#                    toolchain.
-#   -tags nodynamic  the WebP encoder embeds libwebp as WebAssembly instead of
-#                    dlopen-ing the system copy. Without this tag it links
-#                    dynamically and expects a libwebp at a path the runtime
-#                    image may not have. It builds and runs fine on a
-#                    developer machine that happens to have libwebp, which is
-#                    exactly how it reached production once.
+# The check below is kept because this went wrong once: an encoder that
+# dlopened a system library built and ran fine on a developer machine that
+# happened to have it, and could not start in the image that shipped.
 FROM golang:1.26-alpine AS build
 
 WORKDIR /src
@@ -20,7 +17,7 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -tags nodynamic \
+RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/asset-service ./cmd/asset-service
 

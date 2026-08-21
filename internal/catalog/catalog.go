@@ -245,6 +245,33 @@ func (db *DB) AssetsWithoutRenditions(ctx context.Context, limit int) ([]Asset, 
 	return assets, rows.Err()
 }
 
+// AssetsAwaitingNothing returns assets with no outstanding job, oldest first.
+// It is what a rebuild iterates: anything already queued is being dealt with.
+func (db *DB) AssetsAwaitingNothing(ctx context.Context, limit int) ([]Asset, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height
+		FROM assets a
+		WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.asset_key = a.key)
+		ORDER BY created_at LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: assets awaiting nothing: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []Asset
+	for rows.Next() {
+		var a Asset
+		var created string
+		if err := rows.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename,
+			&a.Visibility, &created, &a.CreatedBy, &a.AccountID, &a.Width, &a.Height); err != nil {
+			return nil, fmt.Errorf("catalog: read asset: %w", err)
+		}
+		a.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
+}
+
 // APIKey is a credential that may act on namespaces.
 type APIKey struct {
 	ID         string

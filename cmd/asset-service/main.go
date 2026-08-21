@@ -100,8 +100,9 @@ Usage:
 
   asset-service measure                      record the pixel size of assets
                                              stored before it was measured
-  asset-service requeue                      build derived forms for assets
-                                             that have none
+  asset-service requeue [--rebuild]          build derived forms for assets
+                                             that have none; --rebuild also
+                                             replaces ones already made
 
   asset-service work [flags]                 do the deriving for a service,
                                              on this machine

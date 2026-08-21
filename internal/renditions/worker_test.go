@@ -115,14 +115,14 @@ func TestUploadingAnImageQueuesItAndTheWorkerBuildsTheLadder(t *testing.T) {
 		if r.Width != want || r.Height != want*3/4 {
 			t.Errorf("rendition %d is %dx%d", i, r.Width, r.Height)
 		}
-		if r.ContentType != imaging.OutputContentType {
+		if r.ContentType != imaging.JPEGContentType {
 			t.Errorf("rendition %d is %s", i, r.ContentType)
 		}
 		if r.Size <= 0 {
 			t.Errorf("rendition %d is empty", i)
 		}
 		// The key names the original, the rung, and its own bytes.
-		if !strings.HasPrefix(r.Key, "web/river-w"+itoa(want)+"-") || !strings.HasSuffix(r.Key, ".webp") {
+		if !strings.HasPrefix(r.Key, "web/river-w"+itoa(want)+"-") || !strings.HasSuffix(r.Key, imaging.JPEGExtension) {
 			t.Errorf("rendition %d has key %q", i, r.Key)
 		}
 		stored, ok := f.store.Bytes(r.Key)

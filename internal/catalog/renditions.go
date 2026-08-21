@@ -163,6 +163,20 @@ func (db *DB) ReleaseClaimedJobs(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
+// DeleteRenditions forgets an asset's derived forms so they can be made again.
+//
+// It removes rows, not objects: the old bytes stay in storage under their own
+// keys, unreferenced and harmless, because a key names its content and there
+// is no delete in this service. This is what makes changing what a rendition
+// looks like -- a different format, a different width -- something an operator
+// can do rather than a reason to re-upload everything.
+func (db *DB) DeleteRenditions(ctx context.Context, assetKey string) error {
+	if _, err := db.sql.ExecContext(ctx, `DELETE FROM renditions WHERE asset_key = ?`, assetKey); err != nil {
+		return fmt.Errorf("catalog: delete renditions of %s: %w", assetKey, err)
+	}
+	return nil
+}
+
 // ReleaseStaleJobs puts back work that has been claimed for too long. With the
 // worker in this process, a crash is caught at startup; with the worker on
 // another machine, nothing local notices it dying, so a claim that has gone

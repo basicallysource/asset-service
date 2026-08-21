@@ -96,6 +96,19 @@ at a time is deliberate: this usually runs beside other services on a small
 machine, and both resizing and transcoding will take every core they are
 offered. Encoding is pinned to one thread for the same reason.
 
+**Derived images are JPEG, or PNG when the pixels need it.** WebP is roughly a
+quarter smaller and that difference is real, but a page's images are things
+people take away: right-click, save, open in something. A file a good number of
+tools still refuse is a worse answer than a slightly larger one everything
+reads. Transparency is asked of the pixels rather than the format, because a
+PNG saved with an alpha channel it never uses is the common case; where it is
+really used the rendition stays a PNG, since flattening onto a guessed
+background is visibly wrong on any page with a dark mode.
+
+This is also why nothing here links against anything: JPEG and PNG are the
+standard library, and every decoder is pure Go. The encoder that was not cost
+an outage.
+
 **Video is stored as it arrives and served as something a browser should
 download.** The upload is the camera's own file; the ladder is H.264 in MP4 at
 a couple of widths, plus a still from a second in so a page can show something

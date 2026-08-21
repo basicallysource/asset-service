@@ -64,9 +64,9 @@ func TestAnImageBecomesWebP(t *testing.T) {
 		t.Fatalf("got %d renditions, want 2", len(ladder))
 	}
 	for _, r := range ladder {
-		if r.ContentType != imaging.OutputContentType || r.Extension != imaging.OutputExtension {
+		if r.ContentType != imaging.JPEGContentType || r.Extension != imaging.JPEGExtension {
 			t.Errorf("%s is %s%s, want %s%s", r.Name, r.ContentType, r.Extension,
-				imaging.OutputContentType, imaging.OutputExtension)
+				imaging.JPEGContentType, imaging.JPEGExtension)
 		}
 	}
 }
@@ -86,8 +86,8 @@ func TestAVideoBecomesEncodesAndAPoster(t *testing.T) {
 	}
 	// A caller tells the poster from the encodes by content type, not by name,
 	// which is what the API documents.
-	if ladder[1].ContentType != imaging.OutputContentType {
-		t.Errorf("the poster is %s, want %s", ladder[1].ContentType, imaging.OutputContentType)
+	if ladder[1].ContentType != imaging.JPEGContentType {
+		t.Errorf("the poster is %s, want %s", ladder[1].ContentType, imaging.JPEGContentType)
 	}
 }
 

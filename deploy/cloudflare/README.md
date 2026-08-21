@@ -2,7 +2,7 @@
 
 By default a public URL names the bucket:
 
-    https://<bucket>.<region>.cdn.<provider>.com/web/diagram-3f7a91c2b04e.png
+    https://<bucket>.<region>.cdn.<provider>.com/web/diagram-3f7a91c2b04e.jpg
 
 That works. It also puts a provider's hostname into every page that shows an
 image, and makes changing providers a rewrite of every URL ever published.
@@ -10,7 +10,7 @@ image, and makes changing providers a rewrite of every URL ever published.
 `worker.js` is a Cloudflare Worker that puts them on the same hostname as the
 service instead:
 
-    https://assets.example.com/web/diagram-3f7a91c2b04e.png
+    https://assets.example.com/web/diagram-3f7a91c2b04e.jpg
 
 It decides by the first path segment: `v1`, `a`, `login`, `healthz` and `readyz`
 are the service's, everything else is an asset and is fetched from the CDN in

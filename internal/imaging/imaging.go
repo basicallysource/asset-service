@@ -6,32 +6,34 @@
 // it, and what keeps the worker that calls it down to bookkeeping.
 package imaging
 
-// Build with -tags nodynamic. That is what embeds libwebp as WebAssembly; the
-// default instead dlopens a copy from the host, which produces a binary that
-// works on a developer machine and cannot start in the container that ships.
-// The Dockerfile passes the tag and then refuses to ship a dynamically linked
-// binary; CI uses it too, so the tests exercise the code that runs.
-
 import (
 	"bytes"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
+	"image/jpeg"
+	"image/png"
 
-	"github.com/gen2brain/webp"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
-// WebP is the one output format. Every browser in use supports it, it is
-// roughly a third smaller than JPEG at the same quality, and one format means
-// the ladder is a list of sizes rather than a matrix of sizes and formats.
+// The output formats, and why there are two.
+//
+// JPEG for photographs, because a picture somebody saves off a page should
+// open in whatever they open it with. WebP is roughly a quarter smaller and
+// the difference is real, but it is a file that a good number of tools still
+// refuse, and a page's images are things people take away.
+//
+// PNG for anything with transparency, because JPEG has none: flattening a
+// render onto white is a visible wrong answer on a page with a dark mode, and
+// guessing the background is worse than the bytes.
 const (
-	OutputContentType = "image/webp"
-	OutputExtension   = ".webp"
+	JPEGContentType = "image/jpeg"
+	JPEGExtension   = ".jpg"
+	PNGContentType  = "image/png"
+	PNGExtension    = ".png"
 )
 
 // ErrUnsupported means the bytes are not an image this package can read.
@@ -40,10 +42,12 @@ var ErrUnsupported = errors.New("imaging: unsupported image")
 // Rendition is one derived image.
 type Rendition struct {
 	// Name is how the ladder refers to this rung, e.g. "w640".
-	Name   string
-	Width  int
-	Height int
-	Bytes  []byte
+	Name        string
+	Width       int
+	Height      int
+	ContentType string
+	Extension   string
+	Bytes       []byte
 }
 
 // Options controls what a ladder contains.
@@ -51,7 +55,8 @@ type Options struct {
 	// Widths to produce. A width at or above the original's is skipped:
 	// upscaling invents detail and costs bytes to do it.
 	Widths []int
-	// Quality is the WebP quality, 1-100.
+	// Quality is the JPEG quality, 1-100. It does not apply to renditions kept
+	// as PNG, which are lossless.
 	Quality int
 }
 
@@ -60,14 +65,13 @@ type Options struct {
 // available under its own URL for anyone who actually wants it.
 var DefaultWidths = []int{320, 640, 1024, 1600, 2048}
 
-// DefaultQuality is where WebP stops being visibly lossy for photographs.
-const DefaultQuality = 80
+// DefaultQuality is where JPEG stops being visibly lossy for photographs.
+const DefaultQuality = 82
 
 // Supported reports whether a content type is worth handing to Ladder.
 func Supported(contentType string) bool {
-	switch {
-	case contentType == "image/jpeg", contentType == "image/jpg",
-		contentType == "image/png", contentType == "image/webp":
+	switch contentType {
+	case "image/jpeg", "image/jpg", "image/png", "image/webp":
 		return true
 	default:
 		// GIF decodes, but only its first frame, which would silently turn an
@@ -87,14 +91,11 @@ func Ladder(src []byte, opts Options) ([]Rendition, error) {
 		opts.Quality = DefaultQuality
 	}
 
-	decoded, _, err := image.Decode(bytes.NewReader(src))
+	decoded, err := decode(src)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return nil, err
 	}
 	bounds := decoded.Bounds()
-	if bounds.Dx() < 1 || bounds.Dy() < 1 {
-		return nil, fmt.Errorf("%w: zero-sized image", ErrUnsupported)
-	}
 
 	var ladder []Rendition
 	for _, width := range opts.Widths {
@@ -110,24 +111,20 @@ func Ladder(src []byte, opts Options) ([]Rendition, error) {
 	return ladder, nil
 }
 
-// Still encodes one image as WebP under a given name, shrinking it to at most
-// width. Unlike Ladder it always produces something: it is for a single
-// derived image -- a video's poster frame -- where "the original is already
-// the right size" means encode it as it is, not skip it.
+// Still encodes one image under a given name, shrinking it to at most width.
+// Unlike Ladder it always produces something: it is for a single derived image
+// -- a video's poster frame -- where "the original is already the right size"
+// means encode it as it is, not skip it.
 func Still(src []byte, name string, width, quality int) (Rendition, error) {
 	if quality <= 0 || quality > 100 {
 		quality = DefaultQuality
 	}
 
-	decoded, _, err := image.Decode(bytes.NewReader(src))
+	decoded, err := decode(src)
 	if err != nil {
-		return Rendition{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return Rendition{}, err
 	}
-	bounds := decoded.Bounds()
-	if bounds.Dx() < 1 || bounds.Dy() < 1 {
-		return Rendition{}, fmt.Errorf("%w: zero-sized image", ErrUnsupported)
-	}
-	if width <= 0 || width > bounds.Dx() {
+	if bounds := decoded.Bounds(); width <= 0 || width > bounds.Dx() {
 		width = bounds.Dx()
 	}
 
@@ -139,7 +136,19 @@ func Still(src []byte, name string, width, quality int) (Rendition, error) {
 	return rendition, nil
 }
 
-// render resizes to width and encodes, preserving the aspect ratio.
+func decode(src []byte) (image.Image, error) {
+	decoded, _, err := image.Decode(bytes.NewReader(src))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	if bounds := decoded.Bounds(); bounds.Dx() < 1 || bounds.Dy() < 1 {
+		return nil, fmt.Errorf("%w: zero-sized image", ErrUnsupported)
+	}
+	return decoded, nil
+}
+
+// render resizes to width and encodes, preserving the aspect ratio and
+// choosing the format by whether the pixels need one.
 func render(decoded image.Image, width, quality int) (Rendition, error) {
 	bounds := decoded.Bounds()
 	height := bounds.Dy() * width / bounds.Dx()
@@ -148,18 +157,51 @@ func render(decoded image.Image, width, quality int) (Rendition, error) {
 	}
 
 	// CatmullRom because these are photographs being shrunk a long way, where
-	// a cheaper filter shows it.
+	// a cheaper filter shows it. Src rather than Over: this is a resample into
+	// an empty buffer, and compositing over transparent black darkens the edge
+	// of anything that has an alpha channel.
 	resized := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, draw.Over, nil)
+	draw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, draw.Src, nil)
+
+	rendition := Rendition{
+		Name:        fmt.Sprintf("w%d", width),
+		Width:       width,
+		Height:      height,
+		ContentType: JPEGContentType,
+		Extension:   JPEGExtension,
+	}
 
 	var out bytes.Buffer
-	if err := webp.Encode(&out, resized, webp.Options{Quality: quality}); err != nil {
+	if transparent(decoded) {
+		rendition.ContentType, rendition.Extension = PNGContentType, PNGExtension
+		if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&out, resized); err != nil {
+			return Rendition{}, fmt.Errorf("imaging: encode w%d: %w", width, err)
+		}
+	} else if err := jpeg.Encode(&out, resized, &jpeg.Options{Quality: quality}); err != nil {
 		return Rendition{}, fmt.Errorf("imaging: encode w%d: %w", width, err)
 	}
-	return Rendition{
-		Name:   fmt.Sprintf("w%d", width),
-		Width:  width,
-		Height: height,
-		Bytes:  out.Bytes(),
-	}, nil
+
+	rendition.Bytes = out.Bytes()
+	return rendition, nil
+}
+
+// transparent reports whether any pixel is not fully opaque.
+//
+// It asks the pixels rather than the format: a PNG saved with an alpha channel
+// it never uses is the common case, and there is no reason to keep that one as
+// a PNG. Opaque() answers immediately for image types that cannot have alpha
+// at all, so this costs nothing for a JPEG.
+func transparent(img image.Image) bool {
+	if o, ok := img.(interface{ Opaque() bool }); ok {
+		return !o.Opaque()
+	}
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a != 0xffff {
+				return true
+			}
+		}
+	}
+	return false
 }

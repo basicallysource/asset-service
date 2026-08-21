@@ -70,8 +70,8 @@ func TestRenditionsAreRealImagesOfTheStatedSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendition does not decode: %v", err)
 	}
-	if format != "webp" {
-		t.Errorf("format = %q, want webp", format)
+	if format != "jpeg" {
+		t.Errorf("format = %q, want jpeg", format)
 	}
 	if cfg.Width != 400 || cfg.Height != 200 {
 		t.Errorf("decoded %dx%d, want 400x200", cfg.Width, cfg.Height)
@@ -133,4 +133,73 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(digits)
+}
+
+// transparentImage has a pixel that is not opaque, which is the only thing
+// that should make a rendition keep an alpha channel.
+func transparentImage(t *testing.T, width, height int) []byte {
+	t.Helper()
+
+	// A transparent left half, so that shrinking it cannot blend the
+	// transparency away into its opaque neighbours.
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			if x < width/2 {
+				continue
+			}
+			img.Set(x, y, color.RGBA{R: 200, G: 120, B: 60, A: 255})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestAPhotographBecomesJPEG(t *testing.T) {
+	ladder, err := Ladder(testImage(t, 1200, 900), Options{Widths: []int{640}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ladder[0].ContentType != JPEGContentType || ladder[0].Extension != JPEGExtension {
+		t.Errorf("got %s%s, want %s%s", ladder[0].ContentType, ladder[0].Extension,
+			JPEGContentType, JPEGExtension)
+	}
+}
+
+func TestTransparencyIsKeptRatherThanFlattened(t *testing.T) {
+	ladder, err := Ladder(transparentImage(t, 1200, 900), Options{Widths: []int{640}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ladder[0].ContentType != PNGContentType || ladder[0].Extension != PNGExtension {
+		t.Fatalf("got %s, want %s -- flattening onto a guessed background is a visible wrong answer",
+			ladder[0].ContentType, PNGContentType)
+	}
+
+	decoded, format, err := image.Decode(bytes.NewReader(ladder[0].Bytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if format != "png" {
+		t.Errorf("decoded as %s", format)
+	}
+	if _, _, _, alpha := decoded.At(0, 0).RGBA(); alpha != 0 {
+		t.Errorf("the transparent corner came back with alpha %d", alpha)
+	}
+}
+
+func TestAPNGThatNeverUsesItsAlphaIsStillAJPEG(t *testing.T) {
+	// The common case: a PNG saved with an alpha channel and nothing in it.
+	// There is no reason to pay PNG's size for that.
+	ladder, err := Ladder(testImage(t, 1200, 900), Options{Widths: []int{640}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ladder[0].ContentType != JPEGContentType {
+		t.Errorf("got %s, want %s", ladder[0].ContentType, JPEGContentType)
+	}
 }

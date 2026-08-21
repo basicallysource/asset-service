@@ -148,8 +148,8 @@ wide enough for where you are showing the image, and fall back to the last
 entry. Read it rather than assuming what is in it -- an image too small to
 shrink usefully has a ladder of one.
 
-An image's rungs are all WebP. A video's are H.264 in MP4, plus one still named
-`poster`. **Tell them apart by `content_type`, not by name**: the poster has a
+An image's rungs are JPEG, or PNG where the image really uses transparency. A
+video's are H.264 in MP4, plus one still named `poster`. **Tell them apart by `content_type`, not by name**: the poster has a
 width like any other rung, and treating it as a video would hand a browser an
 image where it expected something to play.
 

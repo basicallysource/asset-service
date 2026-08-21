@@ -70,14 +70,7 @@ func Ladder(ctx context.Context, path, contentType string, opts Options) ([]Rend
 		}
 		out := make([]Rendition, 0, len(ladder))
 		for _, r := range ladder {
-			out = append(out, Rendition{
-				Name:        r.Name,
-				Width:       r.Width,
-				Height:      r.Height,
-				ContentType: imaging.OutputContentType,
-				Extension:   imaging.OutputExtension,
-				Bytes:       r.Bytes,
-			})
+			out = append(out, Rendition(r))
 		}
 		return out, nil
 

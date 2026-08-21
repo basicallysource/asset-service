@@ -24,7 +24,7 @@ one restart at a time.
 | `ASSET_SIGNED_URL_TTL` | `15m` | Lifetime of a private asset's URL. |
 | `ASSET_RENDITIONS` | `true` | Run the rendition worker in this process. Off still queues the work; see below. |
 | `ASSET_RENDITION_WIDTHS` | `320,640,1024,1600,2048` | Widths to produce, below the original's own width. |
-| `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
+| `ASSET_RENDITION_QUALITY` | `82` | JPEG quality, 1-100. Does not apply to renditions kept as PNG. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
 | `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
 | `ASSET_VIDEO_WIDTHS` | `960,1920` | Widths to encode video at, up to the source's own. A narrower source gets one encode at its own width. |
@@ -97,6 +97,12 @@ asset-service requeue
 It queues every asset that has no derived forms and is not already waiting for
 some, and skips anything with a content type it still cannot do. Bounded per
 run, safe to repeat. The running service picks the work up within a poll.
+
+`asset-service requeue --rebuild` is the other case: what a rendition should
+look like has changed -- a different format, different widths -- and the ones
+already made are the old answer. It throws their rows away and makes them
+again. The old objects stay in storage, unreferenced; a key names its bytes, so
+nothing already pointing at one breaks.
 
 ## Sign-in
 

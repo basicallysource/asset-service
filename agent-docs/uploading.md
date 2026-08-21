@@ -90,8 +90,9 @@ one keeps working for anything that already points at it.
 
 ## 4. Use the ladder, for images
 
-An uploaded image gets smaller copies made for it in the background: WebP at
-several widths, never wider than the original. Fetch the manifest again a few
+An uploaded image gets smaller copies made for it in the background: JPEG at
+several widths, never wider than the original -- or PNG, where the image really
+uses transparency. Fetch the manifest again a few
 seconds later:
 
 ```sh

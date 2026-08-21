@@ -282,8 +282,9 @@ func encode(ctx context.Context, in, out string, width int, src source, opts Opt
 }
 
 // still extracts one frame and encodes it with the same code that produces
-// image ladders, so a poster is a WebP like every other derived image and this
-// package needs nothing from ffmpeg's own image encoders.
+// image ladders, so a poster is an ordinary image in the same format as every
+// other derived one, and this package needs nothing from ffmpeg's own image
+// encoders.
 func still(ctx context.Context, in, work string, src source, opts Options) (Rendition, error) {
 	offset := posterOffsetSeconds
 	if src.Duration > 0 && src.Duration < posterOffsetSeconds*2 {
@@ -306,14 +307,7 @@ func still(ctx context.Context, in, work string, src source, opts Options) (Rend
 	if err != nil {
 		return Rendition{}, fmt.Errorf("video: encode poster: %w", err)
 	}
-	return Rendition{
-		Name:        rendition.Name,
-		Width:       rendition.Width,
-		Height:      rendition.Height,
-		ContentType: imaging.OutputContentType,
-		Extension:   imaging.OutputExtension,
-		Bytes:       rendition.Bytes,
-	}, nil
+	return Rendition(rendition), nil
 }
 
 // run executes a tool and returns its standard output, folding whatever it

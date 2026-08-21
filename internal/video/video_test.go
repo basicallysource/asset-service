@@ -5,12 +5,11 @@ import (
 	"context"
 	"errors"
 	"image"
+	_ "image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	_ "golang.org/x/image/webp"
 )
 
 // testVideo writes a short synthetic clip. It is generated rather than
@@ -132,15 +131,15 @@ func TestPosterIsAWebPImageOfTheFrame(t *testing.T) {
 	if poster.Name != PosterName {
 		t.Fatalf("last rendition is %q, want the poster", poster.Name)
 	}
-	if poster.ContentType != "image/webp" {
-		t.Errorf("poster is %s, want image/webp", poster.ContentType)
+	if poster.ContentType != "image/jpeg" {
+		t.Errorf("poster is %s, want image/jpeg", poster.ContentType)
 	}
 
 	decoded, format, err := image.Decode(bytes.NewReader(poster.Bytes))
 	if err != nil {
 		t.Fatalf("poster does not decode: %v", err)
 	}
-	if format != "webp" {
+	if format != "jpeg" {
 		t.Errorf("poster decoded as %s", format)
 	}
 	if got := decoded.Bounds().Dx(); got != 320 {
