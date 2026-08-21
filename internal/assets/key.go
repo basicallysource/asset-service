@@ -26,8 +26,28 @@ var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
+// ReservedNamespaces are the names a namespace may not take, because they are
+// the service's own top-level routes.
+//
+// This matters as soon as anything serves assets from the same hostname as the
+// API -- a CDN in front of both, say, deciding by first path segment which is
+// which. A namespace called "login" would make `/login/keys` ambiguous, and
+// the time to refuse that is when somebody asks for the namespace, not when a
+// URL quietly starts meaning something else.
+var ReservedNamespaces = []string{"v1", "a", "login", "healthz", "readyz"}
+
 // ValidNamespace reports whether ns can name a namespace.
-func ValidNamespace(ns string) bool { return namespacePattern.MatchString(ns) }
+func ValidNamespace(ns string) bool {
+	if !namespacePattern.MatchString(ns) {
+		return false
+	}
+	for _, reserved := range ReservedNamespaces {
+		if ns == reserved {
+			return false
+		}
+	}
+	return true
+}
 
 // ErrBadRequest is anything the caller can fix by asking differently.
 var ErrBadRequest = errors.New("bad request")

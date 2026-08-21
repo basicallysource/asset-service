@@ -82,3 +82,18 @@ func TestNamespace(t *testing.T) {
 		t.Errorf("Namespace of a key with no namespace = %q, want empty", got)
 	}
 }
+
+func TestTheServicesOwnRouteNamesAreNotNamespaces(t *testing.T) {
+	// A namespace sharing a name with a top-level route makes a URL ambiguous
+	// the moment anything serves assets and the API from one hostname.
+	for _, reserved := range ReservedNamespaces {
+		if ValidNamespace(reserved) {
+			t.Errorf("%q is a route of this service and must not be a namespace", reserved)
+		}
+	}
+	for _, fine := range []string{"web", "docs", "v2", "assets", "a-team"} {
+		if !ValidNamespace(fine) {
+			t.Errorf("%q should be a usable namespace", fine)
+		}
+	}
+}

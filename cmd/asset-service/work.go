@@ -83,6 +83,9 @@ type job struct {
 	ContentType string `json:"content_type"`
 	Attempts    int    `json:"attempts"`
 	SourceURL   string `json:"source_url"`
+
+	// LocalPath is set when the file is already on this machine.
+	LocalPath string `json:"-"`
 }
 
 // workOne claims a job, does it, and reports. It reports whether it found work.
@@ -112,12 +115,19 @@ func workOne(ctx context.Context, c *client, options derive.Options) (bool, erro
 }
 
 // build derives every form of one asset and sends each back as it is made.
+//
+// LocalPath short-circuits the download: `upload --derive` already has the
+// file, and fetching back what it just sent would be silly.
 func build(ctx context.Context, c *client, claimed job, options derive.Options) (int, error) {
-	source, err := download(ctx, claimed.SourceURL)
-	if err != nil {
-		return 0, err
+	source := claimed.LocalPath
+	if source == "" {
+		fetched, err := download(ctx, claimed.SourceURL)
+		if err != nil {
+			return 0, err
+		}
+		defer os.Remove(fetched)
+		source = fetched
 	}
-	defer os.Remove(source)
 
 	ladder, err := derive.Ladder(ctx, source, claimed.ContentType, options)
 	if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/basicallysource/asset-service/internal/derive"
+	"github.com/basicallysource/asset-service/internal/video"
 )
 
 // login proves who you are to a service and keeps the token it gives back.
@@ -97,6 +101,8 @@ func uploadCommand(args []string) error {
 	name := flags.String("name", "", "filename to record (defaults to the file's own)")
 	private := flags.Bool("private", false, "store it privately, reachable only through a signed URL")
 	quiet := flags.Bool("quiet", false, "print only the URL")
+	derived := flags.Bool("derive", false, "make the smaller copies here and upload them too")
+	preset := flags.String("preset", video.DefaultPreset, "with --derive: libx264 speed against size")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -141,10 +147,34 @@ func uploadCommand(args []string) error {
 		Size             int64  `json:"size"`
 		RenditionsStatus string `json:"renditions_status"`
 	}
-	status, err := newClient(saved).do(http.MethodPost, "/v1/assets"+query,
+	c := newClient(saved)
+	status, err := c.do(http.MethodPost, "/v1/assets"+query,
 		bytes.NewReader(body), contentType, &manifest)
 	if err != nil {
 		return fmt.Errorf("upload: %w", err)
+	}
+
+	// --derive spends this machine's cores instead of the service's. It is the
+	// right way round for a big video: the encode happens where the file
+	// already is, and the service never queues work for anybody else to do.
+	if *derived && manifest.RenditionsStatus == "pending" {
+		options := derive.Options{Video: video.Options{Preset: *preset}}
+		count, err := build(context.Background(), c, job{
+			Key: manifest.Key, ContentType: contentType, LocalPath: path,
+		}, options)
+		if err != nil {
+			// The original is stored; the copies are not. Leave the job queued
+			// so a worker can try, and say so rather than pretending.
+			fmt.Fprintf(os.Stderr, "upload: made the original but not its copies: %v\n", err)
+		} else {
+			if err := finish(c, manifest.Key, "", false); err != nil {
+				return err
+			}
+			manifest.RenditionsStatus = "ready"
+			if !*quiet {
+				fmt.Printf("made %d smaller copies here\n", count)
+			}
+		}
 	}
 
 	if *quiet {
@@ -157,7 +187,7 @@ func uploadCommand(args []string) error {
 	}
 	fmt.Printf("%s %s (%d bytes)\n%s\n", verb, manifest.Key, manifest.Size, manifest.URL)
 	if manifest.RenditionsStatus == "pending" {
-		fmt.Println("smaller copies are being made; ask again in a moment for the full ladder")
+		fmt.Println("smaller copies are queued; --derive would have made them here instead")
 	}
 	return nil
 }

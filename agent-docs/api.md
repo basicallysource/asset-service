@@ -79,7 +79,7 @@ Upload. The body is the raw file; there is no multipart form.
 
 | Parameter | | |
 |---|---|---|
-| `namespace` | required | Lowercase letters, digits and dashes. The unit access is granted over. |
+| `namespace` | required | Lowercase letters, digits and dashes, and not one of this service's own route names (`v1`, `a`, `login`, `healthz`, `readyz`) -- those are refused so that assets and the API can share a hostname. The unit access is granted over. |
 | `filename` | required | The original name. Used for the readable half of the key and kept in the manifest. |
 | `visibility` | optional | `public` (default) or `private`. |
 

@@ -9,7 +9,7 @@ one restart at a time.
 | Variable | Default | |
 |---|---|---|
 | `ASSET_DB_PATH` | required | SQLite catalog. Its directory is created if missing. |
-| `ASSET_PUBLIC_BASE_URL` | required | Where readers fetch public objects: a CDN or other edge in front of the bucket. |
+| `ASSET_PUBLIC_BASE_URL` | required | Where readers fetch public objects: a CDN or other edge in front of the bucket. To serve them from this service's own hostname instead of the bucket's, see [`deploy/cloudflare`](../deploy/cloudflare/README.md). |
 | `ASSET_S3_ENDPOINT` | required | Regional endpoint, bucket excluded. |
 | `ASSET_S3_REGION` | required | |
 | `ASSET_S3_BUCKET` | required | |

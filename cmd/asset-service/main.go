@@ -86,6 +86,7 @@ Usage:
       --namespace <ns>   where to put it (defaults to your own namespace)
       --name <filename>  filename to record (defaults to the file's own)
       --private          reachable only through a signed URL
+      --derive           make the smaller copies here and upload them too
       --quiet            print only the URL
 
   asset-service keys add <name> <scope>...   mint a key, printed once

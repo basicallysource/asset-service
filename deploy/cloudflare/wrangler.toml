@@ -1,0 +1,18 @@
+# The Worker that serves assets from the same hostname as the API.
+#
+# Set the route to your asset hostname and ASSET_ORIGIN to the CDN in front of
+# your bucket, then point the service's ASSET_PUBLIC_BASE_URL at the same
+# hostname. See worker.js for what it does and why.
+name = "asset-delivery"
+main = "worker.js"
+compatibility_date = "2026-08-21"
+
+[vars]
+ASSET_ORIGIN = "https://basically-asset-service.nyc3.cdn.digitaloceanspaces.com"
+
+[[routes]]
+pattern = "assets.basically.website/*"
+zone_name = "basically.website"
+
+[observability]
+enabled = true
