@@ -59,6 +59,8 @@ func run(args []string) error {
 		return accountsCommand(args)
 	case "measure":
 		return measureCommand(args)
+	case "requeue":
+		return requeueCommand(args)
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -95,6 +97,8 @@ Usage:
 
   asset-service measure                      record the pixel size of assets
                                              stored before it was measured
+  asset-service requeue                      build derived forms for assets
+                                             that have none
 
   asset-service version                      print the build version
 

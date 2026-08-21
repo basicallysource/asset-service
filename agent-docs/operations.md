@@ -60,6 +60,20 @@ It reads each unmeasured asset back out of storage, measures it, and records
 it. It is bounded per run, safe to repeat, and touches nothing that already has
 dimensions.
 
+## Building derived forms for what is already stored
+
+When the service learns to derive something it could not before -- video, say,
+which stored fine long before anything could transcode it -- the assets already
+in the bucket have no ladder and no job to build one. On the host:
+
+```sh
+asset-service requeue
+```
+
+It queues every asset that has no derived forms and is not already waiting for
+some, and skips anything with a content type it still cannot do. Bounded per
+run, safe to repeat. The running service picks the work up within a poll.
+
 ## Sign-in
 
 To let people get their own credentials, create a GitHub OAuth app with the
