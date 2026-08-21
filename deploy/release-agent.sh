@@ -12,6 +12,11 @@ set -euo pipefail
 REPO="${ASSET_SERVICE_REPO:-basicallysource/asset-service}"
 DIR="${ASSET_SERVICE_DIR:-/opt/asset-service}"
 STATE="${ASSET_SERVICE_STATE:-/var/lib/asset-service/installed-release}"
+# A release that did not come up is recorded here so it is tried once rather
+# than on every tick. Without this, one bad build means the service is
+# reinstalled, fails, and rolls back every minute forever -- which is worse
+# than the bad build, because it is an outage on a loop.
+FAILED="${STATE}.failed"
 HEALTH_URL="${ASSET_SERVICE_HEALTH_URL:-http://127.0.0.1:8080/readyz}"
 HEALTH_ATTEMPTS="${ASSET_SERVICE_HEALTH_ATTEMPTS:-30}"
 IMAGE_KEEP_HOURS="${ASSET_SERVICE_IMAGE_KEEP_HOURS:-168}"
@@ -63,6 +68,11 @@ installed=$(cat "$STATE" 2>/dev/null || true)
 if [ "$version" = "$installed" ]; then
     exit 0
 fi
+if [ "$version" = "$(cat "$FAILED" 2>/dev/null || true)" ]; then
+    # Already tried this one. A newer release, or deleting this file, is what
+    # makes it try again.
+    exit 0
+fi
 
 manifest=$(curl -fsSL --max-time 30 "$manifest_url")
 image=$(jq -r '.image' <<<"$manifest")
@@ -92,7 +102,9 @@ for _ in $(seq 1 "$HEALTH_ATTEMPTS"); do
 done
 
 if [ "$healthy" != true ]; then
-    log "${version} did not become healthy"
+    log "${version} did not become healthy; recording it as failed"
+    printf '%s\n' "$version" > "$FAILED"
+    docker logs --tail 20 "$(compose ps -q asset-service 2>/dev/null | head -n1)" 2>&1 | sed 's/^/  /' || true
     if [ -n "$previous" ]; then
         log "rolling back to ${previous}"
         pin_image "$previous"
@@ -102,6 +114,7 @@ if [ "$healthy" != true ]; then
 fi
 
 printf '%s\n' "$version" > "$STATE"
+rm -f "$FAILED"
 log "installed ${version}"
 
 # Old images are the largest thing a deploy leaves behind. The filters keep

@@ -107,8 +107,11 @@ systemctl enable --now asset-service-release.timer
 The timer runs the agent every minute. It installs a release only when the
 published version differs from what is recorded, pulls by digest, restarts,
 waits for `/readyz`, and rolls back to the previous image if that never comes.
-Old images of this service are pruned after a week; nothing else on the host is
-touched.
+A release that fails is recorded in `installed-release.failed` and not tried
+again until a newer one is published -- otherwise one bad build becomes an
+outage on a loop, reinstalling and rolling back every minute. To retry one
+deliberately, delete that file. Old images of this service are pruned after a
+week; nothing else on the host is touched.
 
 Two files configure a deployment, deliberately separate. `/opt/asset-service/.env`
 holds only which image to run and belongs to the release agent, which rewrites

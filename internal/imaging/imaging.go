@@ -6,6 +6,12 @@
 // it, and what keeps the worker that calls it down to bookkeeping.
 package imaging
 
+// Build with -tags nodynamic. That is what embeds libwebp as WebAssembly; the
+// default instead dlopens a copy from the host, which produces a binary that
+// works on a developer machine and cannot start in the container that ships.
+// The Dockerfile passes the tag and then refuses to ship a dynamically linked
+// binary; CI uses it too, so the tests exercise the code that runs.
+
 import (
 	"bytes"
 	"errors"
