@@ -6,6 +6,8 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+# Optional: overrides for the agent itself (health URL, repo, directories).
+EnvironmentFile=-/etc/asset-service/release-agent.env
 ExecStart=/opt/asset-service/release-agent.sh
 # The agent takes its own lock; this keeps systemd from stacking runs too.
 TimeoutStartSec=15min

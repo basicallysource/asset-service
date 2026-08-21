@@ -17,7 +17,16 @@ HEALTH_ATTEMPTS="${ASSET_SERVICE_HEALTH_ATTEMPTS:-30}"
 IMAGE_KEEP_HOURS="${ASSET_SERVICE_IMAGE_KEEP_HOURS:-168}"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
-compose() { docker compose --project-directory "$DIR" --file "$DIR/docker-compose.yml" "$@"; }
+# Naming a file explicitly turns off compose's automatic override loading, so
+# the override has to be named too -- otherwise local wiring (a proxy network,
+# an extra binding) silently does not apply.
+compose() {
+    local files=(--file "$DIR/docker-compose.yml")
+    if [ -f "$DIR/docker-compose.override.yml" ]; then
+        files+=(--file "$DIR/docker-compose.override.yml")
+    fi
+    docker compose --project-directory "$DIR" "${files[@]}" "$@"
+}
 
 # pin_image replaces the image line in .env and leaves every other line alone.
 # Compose reads that file for substitution, so an operator may keep settings
