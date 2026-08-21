@@ -25,6 +25,8 @@ const (
 	CodeNotFound     = "not_found"
 	CodeConflict     = "conflict"
 	CodeTooLarge     = "too_large"
+	CodeUnsupported  = "unsupported_type"
+	CodeRateLimited  = "rate_limited"
 	CodeInternal     = "internal"
 )
 

@@ -41,6 +41,17 @@ type Config struct {
 	RenditionPoll     time.Duration
 	RenditionAttempts int
 
+	// GitHubClientID enables sign-in. Empty means this service issues no
+	// credentials of its own and an operator mints them on the host. It is a
+	// device-flow client id, which is public by design -- there is no secret.
+	GitHubClientID string
+	// AdminLogins are the GitHub logins that get full rights on sign-in.
+	AdminLogins []string
+	// ClientIPHeader is the header a proxy in front of this service sets to
+	// the real client address. Empty means trust none, which is the only safe
+	// default: any caller can send a header.
+	ClientIPHeader string
+
 	S3Endpoint  string
 	S3Region    string
 	S3Bucket    string
@@ -71,6 +82,9 @@ func Load() (Config, error) {
 	cfg.UploadTimeout = duration("UPLOAD_TIMEOUT", 30*time.Minute, &problems)
 	cfg.SignedURLTTL = duration("SIGNED_URL_TTL", 15*time.Minute, &problems)
 	cfg.S3PathStyle = boolean("S3_PATH_STYLE", false, &problems)
+	cfg.GitHubClientID = optional("GITHUB_CLIENT_ID", "")
+	cfg.AdminLogins = list("ADMIN_GITHUB_LOGINS")
+	cfg.ClientIPHeader = optional("CLIENT_IP_HEADER", "")
 	cfg.Renditions = boolean("RENDITIONS", true, &problems)
 	cfg.RenditionWidths = widths("RENDITION_WIDTHS", imaging.DefaultWidths, &problems)
 	cfg.RenditionQuality = number("RENDITION_QUALITY", imaging.DefaultQuality, 1, 100, &problems)
@@ -157,6 +171,17 @@ func widths(name string, fallback []int, problems *[]string) []int {
 	}
 	sort.Ints(parsed)
 	return parsed
+}
+
+// list parses a comma-separated setting into its non-empty parts.
+func list(name string) []string {
+	var out []string
+	for _, field := range strings.Split(lookup(name), ",") {
+		if field = strings.TrimSpace(field); field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 func number(name string, fallback, low, high int, problems *[]string) int {

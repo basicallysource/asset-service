@@ -128,6 +128,8 @@ type Asset struct {
 	Visibility  string
 	CreatedAt   time.Time
 	CreatedBy   string
+	// AccountID is the account whose limits this upload counted against.
+	AccountID string
 }
 
 // ErrNotFound is returned when a lookup finds nothing.
@@ -136,12 +138,12 @@ var ErrNotFound = errors.New("catalog: not found")
 // AssetByKey returns the asset stored at key, or ErrNotFound.
 func (db *DB) AssetByKey(ctx context.Context, key string) (Asset, error) {
 	row := db.sql.QueryRowContext(ctx, `
-		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by
+		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id
 		FROM assets WHERE key = ?`, key)
 
 	var a Asset
 	var created string
-	err := row.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename, &a.Visibility, &created, &a.CreatedBy)
+	err := row.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename, &a.Visibility, &created, &a.CreatedBy, &a.AccountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Asset{}, ErrNotFound
 	}
@@ -157,11 +159,11 @@ func (db *DB) AssetByKey(ctx context.Context, key string) (Asset, error) {
 // and is not an error, it is the same asset.
 func (db *DB) InsertAsset(ctx context.Context, a Asset) (bool, error) {
 	res, err := db.sql.ExecContext(ctx, `
-		INSERT INTO assets (key, namespace, digest, size, content_type, filename, visibility, created_at, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO assets (key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (key) DO NOTHING`,
 		a.Key, a.Namespace, a.Digest, a.Size, a.ContentType, a.Filename, a.Visibility,
-		a.CreatedAt.UTC().Format(time.RFC3339Nano), a.CreatedBy)
+		a.CreatedAt.UTC().Format(time.RFC3339Nano), a.CreatedBy, a.AccountID)
 	if err != nil {
 		return false, fmt.Errorf("catalog: insert %s: %w", a.Key, err)
 	}
@@ -175,23 +177,33 @@ type APIKey struct {
 	Name       string
 	SecretHash string
 	Scopes     []string
-	CreatedAt  time.Time
-	Revoked    bool
+	// AccountID is who this belongs to. Empty means an operator minted it by
+	// hand on the host, which is the one kind of credential no limit applies
+	// to.
+	AccountID string
+	CreatedAt time.Time
+	// ExpiresAt is zero for a credential that does not expire.
+	ExpiresAt time.Time
+	Revoked   bool
 }
 
 // APIKeyByID looks a key up by its public id, or returns ErrNotFound.
 func (db *DB) APIKeyByID(ctx context.Context, id string) (APIKey, error) {
-	row := db.sql.QueryRowContext(ctx, `
-		SELECT id, name, secret_hash, scopes, created_at, revoked_at IS NOT NULL
-		FROM api_keys WHERE id = ?`, id)
+	row := db.sql.QueryRowContext(ctx, apiKeyColumns+` WHERE id = ?`, id)
 	return scanAPIKey(row.Scan)
 }
 
 // InsertAPIKey stores a new key.
 func (db *DB) InsertAPIKey(ctx context.Context, k APIKey) error {
+	var expires any
+	if !k.ExpiresAt.IsZero() {
+		expires = k.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
 	_, err := db.sql.ExecContext(ctx, `
-		INSERT INTO api_keys (id, name, secret_hash, scopes, created_at) VALUES (?, ?, ?, ?, ?)`,
-		k.ID, k.Name, k.SecretHash, strings.Join(k.Scopes, " "), k.CreatedAt.UTC().Format(time.RFC3339Nano))
+		INSERT INTO api_keys (id, name, secret_hash, scopes, account_id, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		k.ID, k.Name, k.SecretHash, strings.Join(k.Scopes, " "), k.AccountID, expires,
+		k.CreatedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("catalog: insert key %s: %w", k.Name, err)
 	}
@@ -201,9 +213,7 @@ func (db *DB) InsertAPIKey(ctx context.Context, k APIKey) error {
 // ListAPIKeys returns every key, newest first. Secret hashes come with them;
 // callers that print keys must not print those.
 func (db *DB) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
-	rows, err := db.sql.QueryContext(ctx, `
-		SELECT id, name, secret_hash, scopes, created_at, revoked_at IS NOT NULL
-		FROM api_keys ORDER BY created_at DESC`)
+	rows, err := db.sql.QueryContext(ctx, apiKeyColumns+` ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: list keys: %w", err)
 	}
@@ -232,10 +242,15 @@ func (db *DB) RevokeAPIKey(ctx context.Context, name string) (bool, error) {
 	return n > 0, err
 }
 
+const apiKeyColumns = `
+	SELECT id, name, secret_hash, scopes, account_id, expires_at, created_at, revoked_at IS NOT NULL
+	FROM api_keys`
+
 func scanAPIKey(scan func(...any) error) (APIKey, error) {
 	var k APIKey
 	var scopes, created string
-	err := scan(&k.ID, &k.Name, &k.SecretHash, &scopes, &created, &k.Revoked)
+	var expires sql.NullString
+	err := scan(&k.ID, &k.Name, &k.SecretHash, &scopes, &k.AccountID, &expires, &created, &k.Revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIKey{}, ErrNotFound
 	}
@@ -244,5 +259,8 @@ func scanAPIKey(scan func(...any) error) (APIKey, error) {
 	}
 	k.Scopes = strings.Fields(scopes)
 	k.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	if expires.Valid {
+		k.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires.String)
+	}
 	return k, nil
 }

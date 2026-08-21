@@ -22,9 +22,50 @@ Authorization: Bearer asset_<id>_<secret>
 ```
 
 A key holds scopes of the form `<action>:<namespace>` -- `write:docs`,
-`read:*`. A request with no credential is anonymous, which is enough to read
-anything public. A request with a credential that does not work is rejected
-immediately, on any route.
+`read:*`, `admin:docs`. The actions are `read`, `write`, and `admin`, which is
+the right to mint and revoke credentials for that namespace. There is no
+hierarchy between them.
+
+A request with no credential is anonymous, which is enough to read anything
+public. A request with a credential that does not work is rejected immediately,
+on any route.
+
+To get a credential, see [uploading.md](uploading.md), or the routes below.
+
+## POST /v1/auth/github/start
+
+Begins a sign-in. No credential needed; rate limited per caller.
+
+Returns `device_code`, `user_code`, `verification_uri`, `expires_in` and
+`interval`. Show the person the code and the URL.
+
+`501` means this service was started without a GitHub client id and issues no
+credentials of its own.
+
+## POST /v1/auth/github/token
+
+Body: `{"device_code": "..."}`.
+
+`202 {"status":"pending"}` means keep waiting; poll no faster than `interval`,
+and slow down further on `{"status":"slow_down"}`. `201` returns the token, the
+account it belongs to, the namespace it may write to, and the limits it is held
+to. `400` means the code expired.
+
+## POST /v1/keys
+
+Mint a credential. Body: `{"name": "...", "scopes": ["write:docs"],
+"expires_in_days": 90}`. Requires `admin` on every namespace named in `scopes`
+-- a key can only ever grant what its creator already administers. The token is
+in the response and nowhere else.
+
+## GET /v1/keys
+
+Lists the keys the caller could have created itself. Others are not shown.
+
+## POST /v1/keys/{name}/revoke
+
+Makes a key stop working, at once. A key the caller may not administer answers
+`404`, the same as one that does not exist.
 
 ## POST /v1/assets
 

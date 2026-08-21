@@ -79,8 +79,14 @@ type PutRequest struct {
 	Filename    string
 	ContentType string
 	Private     bool
-	// By names the principal doing the upload, for the audit trail.
-	By   string
+	// By names the principal doing the upload, for the audit trail, and
+	// AccountID the account whose limits it counted against.
+	By        string
+	AccountID string
+	// MaxBytes further limits this one upload, below the service's own limit.
+	// Zero means the service's limit is the only one.
+	MaxBytes int64
+
 	Body io.Reader
 }
 
@@ -104,7 +110,7 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 		return PutResult{}, fmt.Errorf("%w: filename is required", ErrBadRequest)
 	}
 
-	body, err := s.spool(req.Body)
+	body, err := s.spool(req.Body, req.MaxBytes)
 	if err != nil {
 		return PutResult{}, err
 	}
@@ -145,6 +151,7 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 		Visibility:  visibility,
 		CreatedAt:   s.now(),
 		CreatedBy:   req.By,
+		AccountID:   req.AccountID,
 	}
 
 	created, err := s.Catalog.InsertAsset(ctx, asset)
@@ -292,9 +299,12 @@ type spooled struct {
 	Size   int64
 }
 
-func (s *Service) spool(r io.Reader) (*spooled, error) {
+func (s *Service) spool(r io.Reader, max int64) (*spooled, error) {
 	if r == nil {
 		return nil, fmt.Errorf("%w: body is required", ErrBadRequest)
+	}
+	if max <= 0 || max > s.MaxBytes {
+		max = s.MaxBytes
 	}
 
 	file, err := os.CreateTemp(s.SpoolDir, "upload-*")
@@ -306,12 +316,12 @@ func (s *Service) spool(r io.Reader) (*spooled, error) {
 	hasher := sha256.New()
 	// One byte past the limit, so an oversized body is detected rather than
 	// silently truncated into a valid-looking asset.
-	size, err := io.Copy(io.MultiWriter(file, hasher), io.LimitReader(r, s.MaxBytes+1))
+	size, err := io.Copy(io.MultiWriter(file, hasher), io.LimitReader(r, max+1))
 	if err != nil {
 		spool.Close()
 		return nil, fmt.Errorf("spool: %w", err)
 	}
-	if size > s.MaxBytes {
+	if size > max {
 		spool.Close()
 		return nil, ErrTooLarge
 	}

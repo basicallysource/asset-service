@@ -29,6 +29,9 @@ func Middleware(a Authenticator) httpx.Middleware {
 			case errors.Is(err, ErrRevoked):
 				httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "credential has been revoked")
 				return
+			case errors.Is(err, ErrExpired):
+				httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "credential has expired")
+				return
 			case err != nil:
 				httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "invalid credentials")
 				return

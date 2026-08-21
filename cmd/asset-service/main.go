@@ -18,6 +18,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/config"
+	"github.com/basicallysource/asset-service/internal/identity"
 	"github.com/basicallysource/asset-service/internal/imaging"
 	"github.com/basicallysource/asset-service/internal/objstore"
 	"github.com/basicallysource/asset-service/internal/renditions"
@@ -46,8 +47,14 @@ func run(args []string) error {
 	switch command {
 	case "serve":
 		return serve()
+	case "login":
+		return loginCommand(args)
+	case "upload":
+		return uploadCommand(args)
 	case "keys":
 		return keysCommand(args)
+	case "accounts":
+		return accountsCommand(args)
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -64,14 +71,33 @@ func usage(w *os.File) {
 	fmt.Fprint(w, `asset-service - store assets, hand out URLs to them
 
 Usage:
-  asset-service serve                       run the HTTP service (default)
-  asset-service keys add <name> <scope>...  mint an API key, printed once
-  asset-service keys list                   list keys
-  asset-service keys revoke <name>          make a key stop working
-  asset-service version                     print the build version
+  asset-service serve                        run the HTTP service (default)
 
-A scope is <action>:<namespace>, where action is read or write and the
-namespace may be *, for example write:docs or read:*.
+  asset-service login --url <service>        sign in with GitHub, keep the token
+  asset-service upload <file> [flags]        store a file, print its URL
+      --namespace <ns>   where to put it (defaults to your own namespace)
+      --name <filename>  filename to record (defaults to the file's own)
+      --private          reachable only through a signed URL
+      --quiet            print only the URL
+
+  asset-service keys add <name> <scope>...   mint a key, printed once
+  asset-service keys list                    list keys
+  asset-service keys revoke <name>           make a key stop working
+
+  asset-service accounts list                who has signed in
+  asset-service accounts trust <handle>      raise an account's limits
+  asset-service accounts admin <handle>      let an account manage keys
+  asset-service accounts block <handle>      stop an account uploading
+
+  asset-service version                      print the build version
+
+A scope is <action>:<namespace>. The action is read, write, or admin -- the
+right to hand out credentials for that namespace -- and the namespace may be
+*, for example write:docs, read:*, admin:docs.
+
+keys and accounts run against the database when ASSET_DB_PATH is set, which is
+how an operator works on the host itself. Everywhere else they run against the
+service you signed in to.
 
 Configuration is environment only; see agent-docs/operations.md.
 `)
@@ -145,11 +171,14 @@ func serve() error {
 	}
 
 	server := &api.Server{
-		Assets:  service,
-		Auth:    &auth.APIKeys{Keys: catalogKeys{db}},
-		Catalog: db,
-		Version: version,
-		Logger:  logger,
+		Assets:         service,
+		Auth:           &auth.APIKeys{Keys: api.CatalogKeys(db)},
+		Catalog:        db,
+		Version:        version,
+		Logger:         logger,
+		Identity:       &identity.GitHub{ClientID: cfg.GitHubClientID},
+		ClientIPHeader: cfg.ClientIPHeader,
+		AdminLogins:    cfg.AdminLogins,
 	}
 
 	httpServer := &http.Server{
@@ -169,7 +198,9 @@ func serve() error {
 		"bucket", cfg.S3Bucket,
 		"public_base_url", cfg.PublicBaseURL,
 		"max_upload_bytes", cfg.MaxUploadBytes,
-		"renditions", cfg.Renditions)
+		"renditions", cfg.Renditions,
+		"sign_in", cfg.GitHubClientID != "",
+		"admins", len(cfg.AdminLogins))
 
 	return listen(ctx, httpServer, logger)
 }
@@ -201,21 +232,4 @@ func newLogger(level string) *slog.Logger {
 		parsed = slog.LevelInfo
 	}
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parsed}))
-}
-
-// catalogKeys adapts the catalog to what auth needs, which is one lookup.
-type catalogKeys struct{ db *catalog.DB }
-
-func (c catalogKeys) APIKeyByID(ctx context.Context, id string) (auth.StoredKey, error) {
-	key, err := c.db.APIKeyByID(ctx, id)
-	if err != nil {
-		return auth.StoredKey{}, err
-	}
-	return auth.StoredKey{
-		ID:         key.ID,
-		Name:       key.Name,
-		SecretHash: key.SecretHash,
-		Scopes:     key.Scopes,
-		Revoked:    key.Revoked,
-	}, nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/httpx"
+	"github.com/basicallysource/asset-service/internal/policy"
 )
 
 // deliveryMaxAge is how long a redirect may be reused. A key names its own
@@ -83,12 +84,19 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limits, ok := s.allowed(w, r, principal)
+	if !ok {
+		return
+	}
+
 	result, err := s.Assets.Put(r.Context(), assets.PutRequest{
 		Namespace:   namespace,
 		Filename:    query.Get("filename"),
 		ContentType: r.Header.Get("Content-Type"),
 		Private:     visibility == catalog.VisibilityPrivate,
 		By:          principal.Name,
+		AccountID:   principal.Account,
+		MaxBytes:    limits.MaxFileBytes,
 		Body:        r.Body,
 	})
 	if err != nil {
@@ -108,6 +116,59 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", "/v1/assets/"+result.Asset.Key)
 	httpx.JSON(w, status, body)
+}
+
+// allowed applies the uploader's account limits. An operator-minted key has no
+// account and no limits: it was made by hand on the host, which is already as
+// trusted as the service itself.
+func (s *Server) allowed(w http.ResponseWriter, r *http.Request, principal *auth.Principal) (policy.Limits, bool) {
+	if principal.Account == "" {
+		return policy.Unlimited, true
+	}
+
+	ctx := r.Context()
+	account, err := s.Catalog.AccountByID(ctx, principal.Account)
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return policy.Limits{}, false
+	}
+
+	limits := policy.For(account.Tier)
+	now := time.Now().UTC()
+
+	lastHour, err := s.Catalog.UsageSince(ctx, account.ID, now.Add(-time.Hour))
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return policy.Limits{}, false
+	}
+	lastDay, err := s.Catalog.UsageSince(ctx, account.ID, now.Add(-24*time.Hour))
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return policy.Limits{}, false
+	}
+
+	decision := policy.Evaluate(limits, policy.Upload{
+		ContentType: r.Header.Get("Content-Type"),
+		Size:        r.ContentLength,
+	}, lastHour, lastDay)
+	if decision.Allowed {
+		return limits, true
+	}
+
+	status, code := http.StatusForbidden, httpx.CodeForbidden
+	switch decision.Code {
+	case policy.CodeUnsupportedType:
+		status, code = http.StatusUnsupportedMediaType, httpx.CodeUnsupported
+	case policy.CodeTooLarge:
+		status, code = http.StatusRequestEntityTooLarge, httpx.CodeTooLarge
+	case policy.CodeRateLimited:
+		status, code = http.StatusTooManyRequests, httpx.CodeRateLimited
+		w.Header().Set("Retry-After", itoa(int64(decision.RetryAfter.Seconds())))
+	}
+	s.Logger.Info("upload refused",
+		"account", account.ID, "handle", account.Handle, "tier", account.Tier, "reason", decision.Code)
+	httpx.Error(w, status, code, decision.Message)
+	return policy.Limits{}, false
 }
 
 func (s *Server) metadata(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +292,12 @@ func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error
 	}, nil
 }
 
+// Refusals that come from the account rather than the request.
+var (
+	errBlocked       = errors.New("this account may not upload")
+	errTooManyTokens = errors.New("this account already holds as many tokens as it may; revoke one first")
+)
+
 // writeAssetError maps a service error onto a status. Anything unrecognised is
 // a fault of ours: it is logged in full and reported as nothing more.
 func (s *Server) writeAssetError(w http.ResponseWriter, r *http.Request, err error) {
@@ -243,6 +310,10 @@ func (s *Server) writeAssetError(w http.ResponseWriter, r *http.Request, err err
 		httpx.Error(w, http.StatusRequestEntityTooLarge, httpx.CodeTooLarge, err.Error())
 	case errors.Is(err, assets.ErrDigestCollision):
 		httpx.Error(w, http.StatusConflict, httpx.CodeConflict, err.Error())
+	case errors.Is(err, errBlocked):
+		httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden, err.Error())
+	case errors.Is(err, errTooManyTokens):
+		httpx.Error(w, http.StatusTooManyRequests, httpx.CodeRateLimited, err.Error())
 	default:
 		s.Logger.Error("request failed",
 			"error", err,

@@ -58,9 +58,29 @@ bucket. It cannot lose an asset. Nothing in the schema is mutable except an API
 key's revocation, because assets are immutable by construction.
 
 **Credentials are API keys with namespace scopes.** A scope is
-`<action>:<namespace>`, action being `read` or `write`, namespace possibly `*`.
-Keys are minted by an operator command against the database, never over HTTP.
-Only a hash of each token's secret is stored.
+`<action>:<namespace>`; the action is `read`, `write`, or `admin` -- the right
+to hand out credentials for that namespace. Only a hash of each token's secret
+is stored. A principal can only ever mint what it already administers, so no
+chain of key creation widens access, and there is no hierarchy between actions:
+`admin` does not imply `write`.
+
+**Anyone can get a credential by proving who they are.** GitHub's device flow,
+which suits a terminal or an agent in one: no redirect to catch, no client
+secret, and the token GitHub returns is used once to ask who it belongs to and
+then dropped. A self-served token is confined to a namespace named after the
+account and expires.
+
+**Limits belong to accounts, not tokens.** Minting another token must not buy
+more capacity, or every limit is decoration. An account's tier -- unknown,
+trusted, admin, blocked -- decides the size of a file, uploads an hour, bytes a
+day, how many live tokens it may hold, and which content types it may store.
+Unknown accounts upload images and nothing else, which is what contributors
+actually need and what stops this becoming a way to hand out executables from a
+domain that looks like ours. The numbers live in `internal/policy`, in one
+place, so the rules can be read rather than inferred from handlers.
+
+The whole point of those limits is to make an open door safe: they are set
+where ordinary work never meets them and abuse meets them immediately.
 
 **Anonymous requests are legitimate.** Public assets are readable without a
 credential; a request that *presents* a credential that does not work is
@@ -91,9 +111,11 @@ internal/auth          who is calling, and what they may do
 internal/objstore      S3-compatible storage: SigV4, a client, an in-memory double
 internal/catalog       SQLite: assets, renditions, the job queue, API keys
 internal/imaging       bytes in, smaller bytes out -- no storage, no database
+internal/identity      proving who somebody is, over GitHub's device flow
+internal/policy        what an account may do, in numbers, in one place
 internal/assets        the domain: hash, name, store, resolve
 internal/renditions    the worker that drains the queue
-internal/api           routes and their access rules
+internal/api           routes, their access rules, and the sign-in page
 deploy                 how a host runs and updates it
 ```
 
@@ -113,10 +135,10 @@ frame and transcodes, which needs ffmpeg and a much larger CPU budget than
 resizing does; PDFs want a first-page thumbnail. Each is a new producer behind
 the same queue, table and manifest.
 
-**A second kind of credential.** `auth.Authenticator` takes the whole request
-and returns a `Principal`. A signed-in user, or a session minted by another
-service, is a second implementation and a way to combine the two. No handler
-changes: handlers only ask the principal what it may do.
+**More identity providers.** `auth.Authenticator` takes the whole request and
+returns a `Principal`, and `internal/identity` proves who somebody is. A second
+provider -- a session minted by another service, an OIDC token from a build --
+is a new implementation of each, not a change to any handler.
 
 **Per-asset permissions.** Scopes are namespace-wide, which is the right
 granularity for machines. Anything finer -- this user may see these assets --

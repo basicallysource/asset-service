@@ -18,19 +18,9 @@ import (
 	"github.com/basicallysource/asset-service/internal/objstore"
 )
 
-// keyRing is a KeyStore over a handful of test credentials.
-type keyRing map[string]auth.StoredKey
-
-func (k keyRing) APIKeyByID(_ context.Context, id string) (auth.StoredKey, error) {
-	stored, ok := k[id]
-	if !ok {
-		return auth.StoredKey{}, catalog.ErrNotFound
-	}
-	return stored, nil
-}
-
 type harness struct {
 	handler http.Handler
+	server  *Server
 	store   *objstore.Memory
 	writer  string // a token that may write to docs
 	reader  string // a token that may only read docs
@@ -45,13 +35,18 @@ func newHarness(t *testing.T) *harness {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	ring := keyRing{}
+	// Real credentials in the real store, so these tests exercise the same
+	// lookup path the service uses.
 	mint := func(name string, scopes ...string) string {
 		token, id, hash, err := auth.NewToken()
 		if err != nil {
 			t.Fatal(err)
 		}
-		ring[id] = auth.StoredKey{ID: id, Name: name, SecretHash: hash, Scopes: scopes}
+		if err := db.InsertAPIKey(context.Background(), catalog.APIKey{
+			ID: id, Name: name, SecretHash: hash, Scopes: scopes, CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
 		return token
 	}
 
@@ -64,7 +59,7 @@ func newHarness(t *testing.T) *harness {
 			SpoolDir:     t.TempDir(),
 			SignedURLTTL: time.Minute,
 		},
-		Auth:    &auth.APIKeys{Keys: ring},
+		Auth:    &auth.APIKeys{Keys: CatalogKeys(db)},
 		Catalog: db,
 		Version: "test",
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -72,6 +67,7 @@ func newHarness(t *testing.T) *harness {
 
 	return &harness{
 		handler: server.Handler(),
+		server:  server,
 		store:   store,
 		writer:  mint("ci", "write:docs", "read:docs"),
 		reader:  mint("viewer", "read:docs"),
@@ -91,6 +87,18 @@ func (h *harness) do(t *testing.T, method, target, token, body string) *httptest
 	if body != "" {
 		r.Header.Set("Content-Type", "text/plain")
 	}
+	w := httptest.NewRecorder()
+	h.handler.ServeHTTP(w, r)
+	return w
+}
+
+// upload sends a body of a particular type, which the plain do() helper always
+// calls text.
+func (h *harness) upload(t *testing.T, token, target, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
 	h.handler.ServeHTTP(w, r)
 	return w

@@ -20,10 +20,13 @@ func keysCommand(args []string) error {
 		return errors.New("keys: expected add, list or revoke")
 	}
 
+	// On the host, work on the database directly: that is how the first
+	// credential exists at all, before there is a service to ask.
 	path := strings.TrimSpace(os.Getenv("ASSET_DB_PATH"))
 	if path == "" {
-		return errors.New("keys: ASSET_DB_PATH is required")
+		return remoteKeys(args)
 	}
+
 	db, err := catalog.Open(path)
 	if err != nil {
 		return err

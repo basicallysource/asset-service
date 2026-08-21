@@ -15,8 +15,12 @@ internal/httpx         middleware and the single way to write a response
 internal/auth          who is calling, and what they may do
 internal/objstore      S3-compatible storage: SigV4, a client, an in-memory double
 internal/catalog       SQLite: assets and API keys, with migrations
+internal/identity      proving who somebody is, over GitHub's device flow
+internal/policy        what an account may do, in numbers, in one place
+internal/imaging       bytes in, smaller bytes out -- no storage, no database
 internal/assets        the domain: hash, name, store, resolve
-internal/api           routes and their access rules
+internal/renditions    the worker that builds image ladders
+internal/api           routes, their access rules, and the sign-in page
 deploy                 how a host runs and updates it
 ```
 

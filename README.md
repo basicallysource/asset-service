@@ -44,7 +44,16 @@ It needs an S3-compatible bucket and a few environment variables; see
 full list, and [`agent-docs/operations.md`](agent-docs/operations.md) for
 running it on a host.
 
-Mint a credential:
+Get a credential by signing in with GitHub -- nobody has to approve you, and
+the account you sign in as gets a namespace of its own with limits attached:
+
+```sh
+asset-service login --url https://assets.example.com
+asset-service upload diagram.png
+```
+
+There is a page at `/login` that does the same in a browser. On the host, an
+operator can also mint one directly:
 
 ```sh
 ASSET_DB_PATH=./catalog.db go run ./cmd/asset-service keys add ci write:docs
@@ -61,6 +70,8 @@ curl -X POST --data-binary @diagram.png \
 
 ## Documentation
 
+- [`agent-docs/uploading.md`](agent-docs/uploading.md) -- getting a token and
+  putting a file in, start to finish.
 - [`agent-docs/architecture.md`](agent-docs/architecture.md) -- what is
   committed to and why, including what is deliberately not here yet.
 - [`agent-docs/api.md`](agent-docs/api.md) -- every route, in detail.

@@ -27,15 +27,48 @@ one restart at a time.
 | `ASSET_RENDITION_QUALITY` | `80` | WebP quality, 1-100. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
 | `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
+| `ASSET_GITHUB_CLIENT_ID` | none | Enables sign-in. A device-flow client id, which is public by design -- there is no secret. Empty means this service issues no credentials and an operator mints them on the host. |
+| `ASSET_ADMIN_GITHUB_LOGINS` | none | Comma-separated GitHub logins that get full rights when they sign in. This is how the people who run it bootstrap without shell access. |
+| `ASSET_CLIENT_IP_HEADER` | none | The header a proxy in front of this service sets to the real client address, e.g. `CF-Connecting-IP`. Empty trusts none, which is the only safe default -- any caller can send a header. |
 
 Rendition work runs in the service's own process, one image at a time. On a
 host shared with something else, that is the setting that matters: resizing
 will use everything it is given, and one worker keeps it a good neighbour. A
 2048px ladder off a 24-megapixel photograph takes a few seconds of one core.
 
+## Sign-in
+
+To let people get their own credentials, create a GitHub OAuth app with the
+device flow enabled and set `ASSET_GITHUB_CLIENT_ID` to its client id. There is
+no client secret to store: a device-flow client is a public one.
+
+Whoever signs in gets a token confined to a namespace named after their
+account, with the limits in `internal/policy` for their tier. Put your own
+GitHub login in `ASSET_ADMIN_GITHUB_LOGINS` and signing in gives you a token
+that can manage keys, so running the service needs no shell on the host.
+
+There is a page at `/login` that does all of this in a browser and can mint
+scoped keys.
+
+## Accounts
+
+```sh
+asset-service accounts list             # who has signed in, and what they have used
+asset-service accounts trust <handle>   # raise their limits
+asset-service accounts admin <handle>   # let them manage keys
+asset-service accounts block <handle>   # stop them, and revoke their keys
+asset-service accounts reset <handle>   # back to the default limits
+```
+
+Tiers decide limits: file size, uploads an hour, bytes a day, how many live
+tokens, and which content types. An unknown account -- anyone who has signed in
+-- may upload images, up to sizes and rates nobody working normally will reach.
+
 ## Keys
 
-Minting a credential is an operator action on the host, not a route.
+On the host, `keys` works against the database directly, which is how the first
+credential exists before there is a service to ask. Everywhere else the same
+commands run against the service you signed in to.
 
 ```sh
 asset-service keys add ci-docs write:docs      # prints the token once

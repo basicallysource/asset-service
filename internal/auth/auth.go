@@ -17,12 +17,17 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Actions a principal can hold on a namespace.
 const (
 	ActionRead  = "read"
 	ActionWrite = "write"
+	// ActionAdmin is the right to mint and revoke credentials for a
+	// namespace. Minting a token is bounded by what the minter already holds:
+	// admin:web can create a key for web and cannot create one for parts.
+	ActionAdmin = "admin"
 )
 
 // TokenPrefix marks this service's API keys wherever one turns up.
@@ -33,6 +38,7 @@ const TokenPrefix = "asset"
 var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	ErrRevoked            = errors.New("auth: credential revoked")
+	ErrExpired            = errors.New("auth: credential expired")
 )
 
 // Principal is the identity behind a request.
@@ -41,10 +47,18 @@ type Principal struct {
 	ID     string
 	Name   string
 	Scopes []string
+	// Account is who the credential belongs to, empty for one an operator
+	// minted by hand. Limits are applied to the account, never to the token,
+	// so that making another token cannot buy more capacity.
+	Account string
 }
 
 // Can reports whether the principal may perform action on namespace. A scope
 // is "<action>:<namespace>", and the namespace may be "*".
+//
+// There is no hierarchy between actions: admin does not imply write. A key
+// that manages credentials and a key that uploads are different jobs, and a
+// principal that needs both holds both.
 func (p *Principal) Can(action, namespace string) bool {
 	if p == nil {
 		return false
@@ -61,13 +75,27 @@ func (p *Principal) Can(action, namespace string) bool {
 	return false
 }
 
+// Holds reports whether the principal has any scope for an action at all,
+// which is what a screen needs to decide whether to offer something.
+func (p *Principal) Holds(action string) bool {
+	if p == nil {
+		return false
+	}
+	for _, scope := range p.Scopes {
+		if have, _, ok := strings.Cut(scope, ":"); ok && have == action {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidScope reports whether a scope string is well formed. The namespace
 // half is opaque here -- what makes a legal namespace is a storage question,
 // enforced where keys are built. A scope naming a namespace that cannot exist
 // simply never matches anything.
 func ValidScope(scope string) bool {
 	action, ns, ok := strings.Cut(scope, ":")
-	if !ok || (action != ActionRead && action != ActionWrite) {
+	if !ok || (action != ActionRead && action != ActionWrite && action != ActionAdmin) {
 		return false
 	}
 	return ns != "" && !strings.ContainsAny(ns, ": \t")
@@ -90,12 +118,24 @@ type StoredKey struct {
 	Name       string
 	SecretHash string
 	Scopes     []string
-	Revoked    bool
+	Account    string
+	// ExpiresAt is zero for a credential that does not expire.
+	ExpiresAt time.Time
+	Revoked   bool
 }
 
 // APIKeys authenticates bearer tokens against a KeyStore.
 type APIKeys struct {
 	Keys KeyStore
+	// Now is the clock, swapped in tests.
+	Now func() time.Time
+}
+
+func (a *APIKeys) now() time.Time {
+	if a.Now != nil {
+		return a.Now()
+	}
+	return time.Now().UTC()
 }
 
 var _ Authenticator = (*APIKeys)(nil)
@@ -127,8 +167,16 @@ func (a *APIKeys) Authenticate(ctx context.Context, r *http.Request) (*Principal
 	if stored.Revoked {
 		return nil, ErrRevoked
 	}
+	if !stored.ExpiresAt.IsZero() && !stored.ExpiresAt.After(a.now()) {
+		return nil, ErrExpired
+	}
 
-	return &Principal{ID: stored.ID, Name: stored.Name, Scopes: stored.Scopes}, nil
+	return &Principal{
+		ID:      stored.ID,
+		Name:    stored.Name,
+		Scopes:  stored.Scopes,
+		Account: stored.Account,
+	}, nil
 }
 
 // NewToken mints a credential. It returns the token to hand over once, the id
@@ -163,4 +211,17 @@ func ParseToken(token string) (id, secret string, ok bool) {
 func HashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// CanGrant reports whether this principal may create a credential holding
+// every one of these scopes. A minter can only ever hand out what it already
+// administers, so no chain of key creation can widen access.
+func (p *Principal) CanGrant(scopes []string) bool {
+	for _, scope := range scopes {
+		_, namespace, ok := strings.Cut(scope, ":")
+		if !ok || !p.Can(ActionAdmin, namespace) {
+			return false
+		}
+	}
+	return len(scopes) > 0
 }

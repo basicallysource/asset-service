@@ -1,0 +1,60 @@
+{{define "keys"}}
+<h2>Keys you can manage</h2>
+
+{{if .Minted}}
+<div class="card">
+  <p><strong>{{.Minted.Name}}</strong> — copy it now, it is shown once.</p>
+  <code class="token">{{.Minted.Token}}</code>
+</div>
+{{end}}
+
+{{if .CanGrant}}
+<div class="card">
+  <form hx-post="/login/keys" hx-target="#keys" hx-swap="innerHTML">
+    <div class="row">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" placeholder="docs-ci" required>
+      </div>
+      <div class="field">
+        <label for="scopes">Scopes</label>
+        <input id="scopes" name="scopes" placeholder="write:docs read:docs" size="28" required>
+      </div>
+      <div class="field">
+        <label for="days">Days</label>
+        <input id="days" name="expires_in_days" type="number" min="1" max="365" value="90" style="width:6rem">
+      </div>
+      <button type="submit">Mint key</button>
+    </div>
+  </form>
+  <p class="muted">A key can only be given scopes you already administer.</p>
+</div>
+{{end}}
+
+{{if .Keys}}
+<table>
+  <thead><tr><th>Name</th><th>Scopes</th><th>Expires</th><th></th></tr></thead>
+  <tbody>
+  {{range .Keys}}
+    <tr>
+      <td>{{.Name}}{{if .Revoked}} <span class="muted">(revoked)</span>{{end}}</td>
+      <td><code>{{.Scopes}}</code></td>
+      <td class="muted">{{.Expires}}</td>
+      <td>
+        {{if not .Revoked}}
+        <button class="quiet"
+                hx-post="/login/keys/{{.Name}}/revoke"
+                hx-target="#keys" hx-swap="innerHTML"
+                hx-confirm="Revoke {{.Name}}?">Revoke</button>
+        {{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No keys yet.</p>
+{{end}}
+
+{{if .Error}}<p class="bad">{{.Error}}</p>{{end}}
+{{end}}
