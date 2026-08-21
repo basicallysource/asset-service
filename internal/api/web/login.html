@@ -91,7 +91,9 @@
       <p class="muted">Keep it somewhere safe. It is shown once.</p>
     </div>
 
-    <div id="keys" hx-get="/login/keys" hx-trigger="load" hx-swap="innerHTML"></div>
+    <!-- Loaded on a custom event rather than on load: there is no token to
+         send until somebody has signed in. -->
+    <div id="keys" hx-get="/login/keys" hx-trigger="signedin" hx-swap="innerHTML"></div>
   </div>
 </main>
 
@@ -131,7 +133,7 @@
     setToken(session.token);
     show("account");
     htmx.process(document.body);
-    htmx.trigger($("keys"), "load");
+    htmx.trigger($("keys"), "signedin");
   };
 
   $("start").addEventListener("click", async () => {
