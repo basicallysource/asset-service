@@ -109,6 +109,20 @@ This is also why nothing here links against anything: JPEG and PNG are the
 standard library, and every decoder is pure Go. The encoder that was not cost
 an outage.
 
+**A picture is derived the way it is meant to be looked at.** A phone stores
+the frame the sensor saw and an EXIF tag saying which way up it was held, and
+the standard library's decoders ignore that tag entirely -- so a ladder built
+straight off the pixels comes out sideways, which is how a batch of documentation
+photographs once shipped on their side. `internal/imaging` reads the tag
+itself, a JPEG's APP1 segment and about a screen of code, and bakes it into the
+pixels before anything is scaled: every rung is upright and nothing downstream
+has to know the tag exists. All eight values, mirrored ones included; anything
+unreadable or absent means the pixels are already right, because turning a
+picture that was up is as wrong as leaving a sideways one alone. JPEG only --
+WebP can carry EXIF too, but nothing that uploads here produces a rotated one,
+and that is a second container to walk for a case that has not arrived. The
+original is stored byte-exact as ever; only what is derived from it turns.
+
 **Video is stored as it arrives and served as something a browser should
 download.** The upload is the camera's own file; the ladder is H.264 in MP4 at
 a couple of widths, plus a still from a second in so a page can show something
@@ -151,8 +165,10 @@ content type for both questions -- may this be queued, and how is it made --
 so the upload path and the worker cannot disagree about what the service can
 do. A new kind of asset is a backend there and nothing else.
 
-**A manifest says how big the original is.** Width and height of the bytes as
-uploaded, measured once at upload and stored beside them. It is what lets a
+**A manifest says how big the original is.** Width and height as the picture is
+looked at, measured once at upload and stored beside them -- the axes exchanged
+where an orientation tag says the camera was held sideways, so the manifest and
+the ladder can never disagree about the shape. It is what lets a
 page reserve the right space before an image arrives, which is the difference
 between a page that settles and one that jumps. Deriving it from a rendition is
 not the same answer: the ladder tops out below what a camera produces, and an

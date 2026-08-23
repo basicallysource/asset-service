@@ -18,6 +18,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 
 	"github.com/basicallysource/asset-service/internal/imaging"
@@ -129,7 +130,17 @@ func Dimensions(ctx context.Context, path, contentType string) (int, int, error)
 		if err != nil {
 			return 0, 0, fmt.Errorf("%w: %v", ErrUnsupported, err)
 		}
-		return config.Width, config.Height, nil
+
+		// The ladder is built upright, so the manifest has to say the upright
+		// shape or a page reserves a box the picture does not fit. The tag
+		// that says so is near the front of the file, which is all this reads.
+		head := make([]byte, imaging.HeaderBytes)
+		n, err := file.ReadAt(head, 0)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return 0, 0, fmt.Errorf("derive: read %s: %w", path, err)
+		}
+		width, height := imaging.UprightSize(head[:n], config.Width, config.Height)
+		return width, height, nil
 
 	case video.Supported(contentType):
 		return video.Dimensions(ctx, path)
