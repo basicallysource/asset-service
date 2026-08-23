@@ -72,12 +72,22 @@ account and expires.
 
 **Limits belong to accounts, not tokens.** Minting another token must not buy
 more capacity, or every limit is decoration. An account's tier -- unknown,
-trusted, admin, blocked -- decides the size of a file, uploads an hour, bytes a
-day, how many live tokens it may hold, and which content types it may store.
-Unknown accounts upload images and nothing else, which is what contributors
-actually need and what stops this becoming a way to hand out executables from a
-domain that looks like ours. The numbers live in `internal/policy`, in one
-place, so the rules can be read rather than inferred from handlers.
+contributor, admin, blocked -- decides the size of a file, uploads an hour, a
+day and a week, bytes a day, how many live tokens it may hold, and which
+content types it may store. Unknown accounts upload images and nothing else,
+throttled to a day's worth of documentation work; a contributor -- an account
+an operator has promoted, over the API, on the login page, or on the host --
+gets five times every number, files big enough for video, and any content
+type. The five-times ratio is the definition, and a test holds it. The numbers
+live in `internal/policy`, in one place, so the rules can be read rather than
+inferred from handlers.
+
+**An image claim is verified against the bytes.** The declared content type is
+what image-only accounts are limited by, so the upload path sniffs the first
+bytes of anything claiming to be a JPEG, PNG, WebP or GIF and refuses a
+mismatch. Only those four: Go's sniffer knows them exactly, so a mismatch there
+is a lie rather than a blind spot, and nothing else's claim gains meaning from
+a sniff that answers "something generic".
 
 The whole point of those limits is to make an open door safe: they are set
 where ordinary work never meets them and abuse meets them immediately.
@@ -260,6 +270,14 @@ require rearranging the service.
 wants a listing. Each is a backend in `internal/derive` behind the same queue,
 table and manifest, the way images, video and models already are.
 
+**An upload page.** The login page issues tokens; it does not take files. A
+page where somebody signed in drags images in, watches the ladder build, and
+copies URLs out -- bulk-friendly, phone-friendly -- is a frontend over the
+existing upload API and manifests, not a service change. Two things belong to
+that work when it happens: a Discord identity provider (the seam below), and an
+answer for HEIC, which iPhone cameras produce and the imaging package does not
+read -- either the page converts before upload or `internal/imaging` learns it.
+
 **More identity providers.** `auth.Authenticator` takes the whole request and
 returns a `Principal`, and `internal/identity` proves who somebody is. A second
 provider -- a session minted by another service, an OIDC token from a build --
@@ -272,7 +290,12 @@ belongs in the principal's scopes or in a check beside the visibility check in
 
 **Large uploads.** A body is spooled to disk and stored in a single PUT, which
 is fine to a few gigabytes and simple. Multipart upload belongs in `objstore`
-behind the same `Put`.
+behind the same `Put`. Presigned direct-to-bucket uploads are further away
+still, and deliberately: the service hashing the bytes itself is what makes a
+key unable to lie, and a presigned PUT surrenders that until the service
+re-reads what landed. That complexity buys nothing while the upload cap is
+double-digit megabytes; it earns its keep only if single files grow past what
+streaming through the service can carry.
 
 **Deletion and garbage collection.** There is no delete, deliberately: an
 immutable URL that stops working is worse than a stored file nobody references.

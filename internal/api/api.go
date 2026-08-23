@@ -1,4 +1,4 @@
-// Package api is the HTTP surface: five routes, and the rules about who may
+// Package api is the HTTP surface: the routes, and the rules about who may
 // call them.
 package api
 
@@ -88,9 +88,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login/keys", s.keysFragment)
 	mux.HandleFunc("POST /login/keys", s.mintKeyForm)
 	mux.HandleFunc("POST /login/keys/{name}/revoke", s.revokeKeyForm)
+	mux.HandleFunc("GET /login/accounts", s.accountsFragment)
+	mux.HandleFunc("POST /login/accounts/{id}/tier", s.setTierForm)
 	mux.HandleFunc("POST /v1/keys", s.mintKey)
 	mux.HandleFunc("GET /v1/keys", s.listKeys)
 	mux.HandleFunc("POST /v1/keys/{name}/revoke", s.revokeKey)
+	mux.HandleFunc("GET /v1/accounts", s.listAccounts)
+	mux.HandleFunc("POST /v1/accounts/{id}/tier", s.setAccountTier)
 	mux.HandleFunc("POST /v1/auth/github/start", s.startSignIn)
 	mux.HandleFunc("POST /v1/auth/github/token", s.finishSignIn)
 	mux.HandleFunc("GET /healthz", s.health)

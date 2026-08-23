@@ -167,6 +167,6 @@ The exact numbers come back with your token when you sign in, in `limits`.
 ## If you need more
 
 Ask whoever runs the service. They can raise an account's limits
-(`asset-service accounts trust <handle>`) or mint you a key for a shared
+(`asset-service accounts promote <handle>`) or mint you a key for a shared
 namespace (`asset-service keys add docs-ci write:docs`). Both are one command
 for them and neither requires redeploying anything.

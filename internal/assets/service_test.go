@@ -216,6 +216,30 @@ func TestSpoolFilesAreCleanedUp(t *testing.T) {
 	}
 }
 
+// The declared type is what image-only accounts are limited by, so bytes that
+// do not look like the image they claim to be are refused at the door.
+func TestBytesMustLookLikeTheImageTheyClaimToBe(t *testing.T) {
+	service, _ := newService(t)
+
+	_, err := service.Put(context.Background(), PutRequest{
+		Namespace: "docs", Filename: "totally-a.png", By: "test",
+		ContentType: "image/png",
+		Body:        strings.NewReader("PK\x03\x04 a zip in a trench coat"),
+	})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("err = %v, want ErrBadRequest", err)
+	}
+
+	// The honest version of the same claim is accepted.
+	if _, err := service.Put(context.Background(), PutRequest{
+		Namespace: "docs", Filename: "real.png", By: "test",
+		ContentType: "image/png",
+		Body:        strings.NewReader("\x89PNG\r\n\x1a\nbody"),
+	}); err != nil {
+		t.Fatalf("a real png was refused: %v", err)
+	}
+}
+
 func TestContentTypeFallsBackToTheExtension(t *testing.T) {
 	service, _ := newService(t)
 
@@ -263,7 +287,7 @@ func TestACameraOriginalIsStoredWhereStorageWillNotServeIt(t *testing.T) {
 	// prints for it.
 	photo, err := service.Put(context.Background(), PutRequest{
 		Namespace: "docs", Filename: "photo.jpg", ContentType: "image/jpeg",
-		By: "test", Body: strings.NewReader("pretend this came off a phone"),
+		By: "test", Body: strings.NewReader("\xff\xd8\xffpretend this came off a phone"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +314,7 @@ func TestWhatIsPublishedIsTheFullCopyRatherThanARung(t *testing.T) {
 
 	photo, err := service.Put(context.Background(), PutRequest{
 		Namespace: "docs", Filename: "photo.jpg", ContentType: "image/jpeg",
-		By: "test", Body: strings.NewReader("pretend this came off a phone"),
+		By: "test", Body: strings.NewReader("\xff\xd8\xffpretend this came off a phone"),
 	})
 	if err != nil {
 		t.Fatal(err)

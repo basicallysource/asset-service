@@ -165,11 +165,16 @@ func (s *Server) allowed(w http.ResponseWriter, r *http.Request, principal *auth
 		s.writeAssetError(w, r, err)
 		return policy.Limits{}, false
 	}
+	lastWeek, err := s.Catalog.UsageSince(ctx, account.ID, now.Add(-7*24*time.Hour))
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return policy.Limits{}, false
+	}
 
 	decision := policy.Evaluate(limits, policy.Upload{
 		ContentType: r.Header.Get("Content-Type"),
 		Size:        r.ContentLength,
-	}, lastHour, lastDay)
+	}, lastHour, lastDay, lastWeek)
 	if decision.Allowed {
 		return limits, true
 	}

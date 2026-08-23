@@ -13,12 +13,11 @@ import (
 	"github.com/basicallysource/asset-service/internal/policy"
 )
 
-// accountsCommand adjusts how much an account is trusted. It runs against the
-// database on the host: deciding that somebody is trustworthy is not something
-// the service should offer a route for.
+// accountsCommand adjusts an account's standing. It runs against the database
+// on the host; an admin can do the same over the API or on the login page.
 func accountsCommand(args []string) error {
 	if len(args) == 0 {
-		return errors.New("accounts: expected list, trust, admin, block or reset")
+		return errors.New("accounts: expected list, promote, admin, block or reset")
 	}
 
 	path := strings.TrimSpace(os.Getenv("ASSET_DB_PATH"))
@@ -37,10 +36,10 @@ func accountsCommand(args []string) error {
 	}
 
 	tiers := map[string]string{
-		"trust": catalog.TierTrusted,
-		"admin": catalog.TierAdmin,
-		"block": catalog.TierBlocked,
-		"reset": catalog.TierUnknown,
+		"promote": catalog.TierContributor,
+		"admin":   catalog.TierAdmin,
+		"block":   catalog.TierBlocked,
+		"reset":   catalog.TierUnknown,
 	}
 	tier, ok := tiers[args[0]]
 	if !ok {
@@ -78,25 +77,13 @@ func accountsCommand(args []string) error {
 }
 
 func listAccounts(ctx context.Context, db *catalog.DB) error {
-	keys, err := db.ListAPIKeys(ctx)
+	accounts, err := db.Accounts(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Accounts are discovered through their keys: an account with none has
-	// signed in and never used it, which is not worth a row of its own.
-	seen := map[string]bool{}
 	now := time.Now().UTC()
-	for _, key := range keys {
-		if key.AccountID == "" || seen[key.AccountID] {
-			continue
-		}
-		seen[key.AccountID] = true
-
-		account, err := db.AccountByID(ctx, key.AccountID)
-		if err != nil {
-			continue
-		}
+	for _, account := range accounts {
 		live, err := db.LiveKeysFor(ctx, account.ID, now)
 		if err != nil {
 			return err
@@ -106,7 +93,7 @@ func listAccounts(ctx context.Context, db *catalog.DB) error {
 			return err
 		}
 		limits := policy.For(account.Tier)
-		fmt.Printf("%-24s %-9s %-24s %d keys, %d uploads today (%s)\n",
+		fmt.Printf("%-24s %-11s %-24s %d keys, %d uploads today (%s)\n",
 			account.Handle, account.Tier, account.ID, live, usage.Uploads,
 			describeLimits(limits))
 	}
@@ -114,8 +101,8 @@ func listAccounts(ctx context.Context, db *catalog.DB) error {
 }
 
 func describeLimits(l policy.Limits) string {
-	if l.UploadsPerHour == 0 && l.BytesPerDay == 0 {
+	if l.UploadsPerDay == 0 && l.BytesPerDay == 0 {
 		return "no limits"
 	}
-	return fmt.Sprintf("%d/hour", l.UploadsPerHour)
+	return fmt.Sprintf("%d/day, %d/week", l.UploadsPerDay, l.UploadsPerWeek)
 }

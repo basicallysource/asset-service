@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -116,6 +117,10 @@ func (s *Service) Put(ctx context.Context, req PutRequest) (PutResult, error) {
 		return PutResult{}, err
 	}
 	defer body.Close()
+
+	if err := checkImageClaim(body.file, req.ContentType); err != nil {
+		return PutResult{}, err
+	}
 
 	key, err := BuildKey(req.Namespace, req.Filename, body.Digest)
 	if err != nil {
@@ -483,6 +488,42 @@ func contentType(declared, key string) string {
 		}
 	}
 	return defaultContentType
+}
+
+// sniffedImageTypes are the claims worth verifying: Go's sniffer recognizes
+// each of these exactly from the first bytes, so for them a mismatch is a
+// mislabeled file or a lie, never a blind spot. Everything else -- an STL, a
+// zip a privileged key is allowed to store -- sniffs as something generic and
+// proves nothing either way.
+var sniffedImageTypes = map[string]bool{
+	"image/jpeg": true, "image/png": true, "image/webp": true, "image/gif": true,
+}
+
+// checkImageClaim rejects bytes that do not look like the image type they were
+// declared as. The declared type is what image-only accounts are limited BY,
+// so trusting the header alone would make that limit a matter of honesty.
+func checkImageClaim(file *os.File, declared string) error {
+	claimed := strings.ToLower(strings.TrimSpace(declared))
+	if i := strings.Index(claimed, ";"); i >= 0 {
+		claimed = strings.TrimSpace(claimed[:i])
+	}
+	if !sniffedImageTypes[claimed] {
+		return nil
+	}
+
+	head := make([]byte, 512)
+	n, err := file.ReadAt(head, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("sniff upload: %w", err)
+	}
+	sniffed := http.DetectContentType(head[:n])
+	if i := strings.Index(sniffed, ";"); i >= 0 {
+		sniffed = strings.TrimSpace(sniffed[:i])
+	}
+	if sniffed != claimed {
+		return fmt.Errorf("%w: the bytes look like %s, not the declared %s", ErrBadRequest, sniffed, claimed)
+	}
+	return nil
 }
 
 // isPrintable rejects a header value that could inject another header or

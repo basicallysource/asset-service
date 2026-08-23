@@ -209,13 +209,14 @@ func TestModelsAreQueued(t *testing.T) {
 	}
 }
 
-// Bytes that claim to be an image and are not will never decode, so the job is
-// finished rather than retried until it is marked failed.
+// Bytes that open like a PNG and then fall apart will never decode, so the
+// job is finished rather than retried until it is marked failed. (The PNG
+// signature is real: anything less does not get past the upload sniff.)
 func TestUndecodableBytesAreGivenUpOnImmediately(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	asset := f.upload(t, "broken.png", "image/png", []byte("PNG? no."))
+	asset := f.upload(t, "broken.png", "image/png", []byte("\x89PNG\r\n\x1a\nno, not really"))
 
 	if _, err := f.worker.processOne(ctx); err != nil {
 		t.Fatal(err)
