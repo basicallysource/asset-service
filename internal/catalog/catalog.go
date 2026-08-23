@@ -219,6 +219,34 @@ func (db *DB) AssetsMissingDimensions(ctx context.Context, limit int) ([]Asset, 
 // outstanding job, oldest first. It answers one question: what did this
 // service store before it knew how to derive anything from it? Nothing else
 // should list assets -- that is a bucket listing, not a query.
+// AssetsInNamespace returns a namespace's assets, oldest first. It is for the
+// operator commands that walk what is already stored; nothing on a request
+// path lists anything.
+func (db *DB) AssetsInNamespace(ctx context.Context, namespace string, limit int) ([]Asset, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height
+		FROM assets
+		WHERE namespace = ?
+		ORDER BY created_at LIMIT ?`, namespace, limit)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: assets in %s: %w", namespace, err)
+	}
+	defer rows.Close()
+
+	var assets []Asset
+	for rows.Next() {
+		var a Asset
+		var created string
+		if err := rows.Scan(&a.Key, &a.Namespace, &a.Digest, &a.Size, &a.ContentType, &a.Filename,
+			&a.Visibility, &created, &a.CreatedBy, &a.AccountID, &a.Width, &a.Height); err != nil {
+			return nil, fmt.Errorf("catalog: read asset: %w", err)
+		}
+		a.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
+}
+
 func (db *DB) AssetsWithoutRenditions(ctx context.Context, limit int) ([]Asset, error) {
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT key, namespace, digest, size, content_type, filename, visibility, created_at, created_by, account_id, width, height

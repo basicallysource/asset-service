@@ -104,6 +104,37 @@ already made are the old answer. It throws their rows away and makes them
 again. The old objects stay in storage, unreferenced; a key names its bytes, so
 nothing already pointing at one breaks.
 
+## Withholding camera originals stored before the service did
+
+An image or a video uploaded now is stored private and published as a copy
+without the camera's own notes in it -- position, capture time, device. One
+stored earlier is still an object anybody can fetch. On the host, one namespace
+at a time:
+
+```sh
+asset-service withhold docs
+```
+
+Each asset goes one of two ways. Where there is already something to publish in
+its place -- an image's `full` copy, a video's encodes -- the object's ACL is
+rewritten and nothing else happens: no bytes are read or moved, so this costs
+one request per asset whatever they weigh. Where there is not, the asset is
+queued so the copy gets built, and a later run withholds it. Bounded per run
+and safe to repeat; the usual course is to run it, wait for the queue, and run
+it again.
+
+Two things it does not do, both of which matter more than the command:
+
+- **It does not reach a cache.** An object that has been public may sit in a
+  CDN or a browser for as long as its cache headers said -- a year, under the
+  immutable caching public objects are stored with. Withholding it stops new
+  fetches from storage; it does not retract what has already been handed out.
+  Where that matters, purge the CDN as well.
+- **It does not rewrite pages.** Anything that published an original's URL
+  starts getting a refusal. Rebuild those pages from the manifest -- `url` is
+  the published form -- before withholding the namespace they point at, or
+  accept that they break until you do.
+
 ## Sign-in
 
 To let people get their own credentials, create a GitHub OAuth app with the

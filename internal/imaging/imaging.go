@@ -80,6 +80,20 @@ func Supported(contentType string) bool {
 	}
 }
 
+// Publishable reports whether an image of this content type has a copy that
+// can be published in place of the bytes that were uploaded -- one this
+// package can strip the camera's own notes out of, byte for byte.
+func Publishable(contentType string) bool {
+	switch contentType {
+	case "image/jpeg", "image/jpg", "image/png":
+		return true
+	default:
+		// A WebP or a GIF is left as it was uploaded: nothing that arrives
+		// here comes off a camera in one. See Full.
+		return false
+	}
+}
+
 // Ladder decodes src once and returns a rendition per usable width, smallest
 // first. An image smaller than every width produces nothing, which is not an
 // error -- it means the original is already the right size.

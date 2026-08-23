@@ -54,21 +54,32 @@ func videoFile(t *testing.T) string {
 	return path
 }
 
-func TestAnImageBecomesWebP(t *testing.T) {
+func TestAnImageBecomesJPEGRungsAndAFullCopy(t *testing.T) {
 	ladder, err := Ladder(context.Background(), imageFile(t, 1200, 900), "image/png",
 		Options{Image: imaging.Options{Widths: []int{320, 640}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(ladder) != 2 {
-		t.Fatalf("got %d renditions, want 2", len(ladder))
+	if len(ladder) != 3 {
+		t.Fatalf("got %d renditions, want two rungs and a full copy", len(ladder))
 	}
-	for _, r := range ladder {
+	for _, r := range ladder[:2] {
 		if r.ContentType != imaging.JPEGContentType || r.Extension != imaging.JPEGExtension {
 			t.Errorf("%s is %s%s, want %s%s", r.Name, r.ContentType, r.Extension,
 				imaging.JPEGContentType, imaging.JPEGExtension)
 		}
+	}
+
+	// Last, because it is the largest: the copy that is published in place of
+	// the original, in the format it was uploaded in rather than as a JPEG.
+	full := ladder[2]
+	if full.Name != imaging.FullName || full.Width != 1200 || full.Height != 900 {
+		t.Errorf("the full copy is %q at %dx%d, want %q at 1200x900",
+			full.Name, full.Width, full.Height, imaging.FullName)
+	}
+	if full.ContentType != imaging.PNGContentType {
+		t.Errorf("the full copy of a PNG is %s, want %s", full.ContentType, imaging.PNGContentType)
 	}
 }
 

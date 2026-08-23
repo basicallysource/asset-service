@@ -31,6 +31,12 @@ OrcaSlicer on a worker rather than estimated. The manifest lists what exists, ho
 more is coming, so a page can ask for the narrowest rung that suits it instead
 of a forty-megabyte file off a camera.
 
+What a camera writes into a file -- where it stood, when, which phone -- is
+kept in storage and left out of what is published: an image is served at full
+resolution as a byte-for-byte copy without those segments, a video as its own
+encodes, and the file exactly as uploaded needs a credential and a URL that
+expires. Anything that is its own deliverable, like a model, is unchanged.
+
 The service does not serve bytes. It answers with a URL -- public for public
 assets, signed and expiring for private ones -- and the reader fetches from
 storage directly, so one download is one transfer out of storage rather than

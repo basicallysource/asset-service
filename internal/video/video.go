@@ -244,6 +244,12 @@ func encode(ctx context.Context, in, out string, width int, src source, opts Opt
 	_, err := run(ctx, "ffmpeg", "-nostdin", "-v", "error", "-y",
 		"-i", in,
 		"-map", "0:v:0", "-map", "0:a:0?",
+		// No metadata from the source. ffmpeg copies it by default, and a
+		// clip off a phone carries where it was taken: encoding it into a
+		// file that is published would republish the location of whoever
+		// filmed it. Verified against a located QuickTime file -- without
+		// this the tag comes out the other side.
+		"-map_metadata", "-1",
 		"-vf", fmt.Sprintf("scale=%d:-2:flags=lanczos", width),
 		"-c:v", "libx264", "-crf", strconv.Itoa(opts.CRF), "-preset", opts.Preset,
 		"-profile:v", "high", "-pix_fmt", "yuv420p",

@@ -27,6 +27,10 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+// FullName is what an image's full-resolution publishable copy is called in a
+// ladder: the same pixels as the original, without the camera's own notes.
+const FullName = imaging.FullName
+
 // ErrUnsupported means the bytes are not what their content type claims, so
 // there is nothing to come back for. Anything else is worth a retry.
 var ErrUnsupported = errors.New("derive: cannot read this asset")
@@ -56,6 +60,26 @@ func Supported(contentType string) bool {
 		model.Supported(contentType)
 }
 
+// WithholdsOriginal reports whether an asset of this content type is published
+// as something derived rather than as the bytes that were uploaded.
+//
+// This is the one place that answers it, for the same reason Supported is the
+// one place that answers what has derived forms at all: the upload path, which
+// decides whether storage may serve the original to anyone, and the read path,
+// which decides which URL to hand out, must not be able to disagree. If they
+// did, the disagreement would be an object readable by the whole internet.
+//
+// A camera writes where it stood, when, and what it was into the file it
+// produces. The bytes are kept exactly as they arrived -- that is the whole
+// promise of storing an original -- but a public URL should not republish any
+// of it, so what is published is a copy without it: for an image the same
+// pixels with the notes stripped out, for a video the encodes, which are made
+// from scratch. Anything else -- a model, an archive, a text file -- is its
+// own deliverable and is served as it always was.
+func WithholdsOriginal(contentType string) bool {
+	return imaging.Publishable(contentType) || video.Supported(contentType)
+}
+
 // Ladder produces every derived form of the asset at path, smallest first. An
 // asset that is already small enough produces nothing, which is not an error.
 func Ladder(ctx context.Context, path, contentType string, opts Options) ([]Rendition, error) {
@@ -72,9 +96,24 @@ func Ladder(ctx context.Context, path, contentType string, opts Options) ([]Rend
 			}
 			return nil, err
 		}
-		out := make([]Rendition, 0, len(ladder))
+		out := make([]Rendition, 0, len(ladder)+1)
 		for _, r := range ladder {
 			out = append(out, Rendition(r))
+		}
+
+		// Last, because it is the largest: the full-resolution copy that may
+		// be published in place of the original. Only for the formats that
+		// can be stripped byte for byte -- and only those are withheld, so
+		// there is always something public to serve.
+		if imaging.Publishable(contentType) {
+			full, err := imaging.Full(src)
+			if err != nil {
+				if errors.Is(err, imaging.ErrUnsupported) {
+					return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+				}
+				return nil, err
+			}
+			out = append(out, Rendition(full))
 		}
 		return out, nil
 

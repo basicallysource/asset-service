@@ -298,12 +298,17 @@ func (s *Service) store(ctx context.Context, key string, body *spooled, req PutR
 		}
 	}
 
+	resolvedType := contentType(req.ContentType, key)
 	put := objstore.PutRequest{
 		Key:         key,
 		Size:        body.Size,
-		ContentType: contentType(req.ContentType, key),
+		ContentType: resolvedType,
 		Digest:      body.Digest,
-		Public:      visibility == catalog.VisibilityPublic,
+		// A withheld original is stored private even when the asset is
+		// public. Handing out a different URL would not be enough on its own:
+		// what makes an object readable by anyone is its ACL, not which
+		// address this service prints.
+		Public: visibility == catalog.VisibilityPublic && !derive.WithholdsOriginal(resolvedType),
 	}
 
 	var lastErr error
@@ -327,12 +332,51 @@ func (s *Service) Get(ctx context.Context, key string) (catalog.Asset, error) {
 	return s.Catalog.AssetByKey(ctx, key)
 }
 
-// URL is where the bytes of an asset can be fetched from. Public assets get a
-// stable URL; private assets get one that expires. Either way the reader
-// fetches from storage directly -- this service hands out addresses, it does
-// not carry payloads.
+// URL is where the bytes exactly as uploaded can be fetched from. A public
+// asset gets a stable URL; a private one, and one whose original is withheld,
+// gets one that expires. Either way the reader fetches from storage directly
+// -- this service hands out addresses, it does not carry payloads.
+//
+// This is the original itself, so it is not what a page should publish. That
+// is PublicForm.
 func (s *Service) URL(a catalog.Asset) (url string, expires bool, err error) {
+	if derive.WithholdsOriginal(a.ContentType) {
+		return s.KeyURL(a.Key, catalog.VisibilityPrivate)
+	}
 	return s.KeyURL(a.Key, a.Visibility)
+}
+
+// PublicForm is the URL of the form of this asset that may be published.
+//
+// For anything whose original is withheld that is the largest derived form --
+// an image's stripped full-resolution copy, a video's widest encode -- and for
+// everything else it is the original, as it always was. An empty URL means
+// there is nothing publishable yet, which is the state between an upload and
+// the end of its ladder; the original is not an answer to fall back on, since
+// withholding it is the point.
+func (s *Service) PublicForm(a catalog.Asset, ladder []catalog.Rendition) (url string, expires bool, err error) {
+	if a.Visibility == catalog.VisibilityPrivate || !derive.WithholdsOriginal(a.ContentType) {
+		return s.URL(a)
+	}
+
+	// The full copy where there is one: an image is published at the size it
+	// was uploaded, minus what the camera wrote into it. Failing that the
+	// widest rendition there is -- which is a video's largest encode, and,
+	// for an image stored before the copy existed, its largest rung until
+	// `asset-service withhold` has had one built.
+	widest := -1
+	for i, r := range ladder {
+		if r.Name == derive.FullName {
+			return s.KeyURL(r.Key, a.Visibility)
+		}
+		if widest < 0 || r.Width > ladder[widest].Width {
+			widest = i
+		}
+	}
+	if widest < 0 {
+		return "", false, nil
+	}
+	return s.KeyURL(ladder[widest].Key, a.Visibility)
 }
 
 // KeyURL is URL for any stored object, including a rendition, which is visible

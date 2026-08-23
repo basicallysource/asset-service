@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -9,6 +8,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/assets"
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
+	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/httpx"
 	"github.com/basicallysource/asset-service/internal/policy"
 )
@@ -34,6 +34,14 @@ const deliveryMaxAge = "86400"
 // before an image arrives, so use them rather than a rendition's: the ladder
 // tops out below what a camera produces, and an asset too small to shrink has
 // no ladder to read a shape from at all.
+//
+// URL is the form of the asset that may be published. For anything that comes
+// off a camera that is the largest derived form -- an image's full-resolution
+// copy without the camera's notes in it, a video's widest encode -- because
+// the original itself carries where it was taken and what took it. It is
+// empty until there is one, which is until RenditionsStatus is "ready"; the
+// asset's own bytes are never the fallback. Everything else is served as it
+// was uploaded, as before.
 type manifest struct {
 	Key              string      `json:"key"`
 	Namespace        string      `json:"namespace"`
@@ -58,6 +66,9 @@ type rendition struct {
 	Height      int    `json:"height,omitempty"`
 	Size        int64  `json:"size"`
 	URL         string `json:"url"`
+	// URLExpires marks a URL that must not be published or kept: the bytes as
+	// uploaded, handed to a caller that is allowed to read them.
+	URLExpires bool `json:"url_expires,omitempty"`
 }
 
 // original is the rendition name for the bytes exactly as uploaded.
@@ -112,7 +123,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := s.manifest(r.Context(), result.Asset)
+	body, err := s.manifest(r, result.Asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
@@ -184,7 +195,7 @@ func (s *Server) metadata(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := s.manifest(r.Context(), asset)
+	body, err := s.manifest(r, asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
@@ -200,9 +211,26 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, expires, err := s.Assets.URL(asset)
+	derived, _, err := s.Assets.Ladder(r.Context(), asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
+		return
+	}
+
+	// The published form, for every caller alike. A reader that may have the
+	// bytes as uploaded gets them from a manifest instead: a redirect that
+	// depended on who asked would be one more way for an expiring URL to end
+	// up published in a page.
+	url, expires, err := s.Assets.PublicForm(asset, derived)
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return
+	}
+	if url == "" {
+		// Withheld, and its published form is not made yet. Saying so beats a
+		// redirect to bytes that were meant to stay off a page.
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"this asset has no published form yet")
 		return
 	}
 
@@ -220,6 +248,18 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 	// pure waste on every one of them.
 	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusFound)
+}
+
+// mayReadOriginal reports whether this caller may be told where the bytes as
+// uploaded are. Anyone may have an original that is not withheld; a withheld
+// one goes only to a principal that could read the asset if it were private,
+// which is the same test that guards a private asset's own bytes.
+func (s *Server) mayReadOriginal(r *http.Request, a catalog.Asset) bool {
+	if a.Visibility != catalog.VisibilityPublic || !derive.WithholdsOriginal(a.ContentType) {
+		return true
+	}
+	principal := auth.From(r.Context())
+	return principal != nil && principal.Can(auth.ActionRead, a.Namespace)
 }
 
 // readable resolves the key in the request and enforces read access, writing
@@ -249,13 +289,13 @@ func (s *Server) readable(w http.ResponseWriter, r *http.Request) (catalog.Asset
 	return asset, true
 }
 
-func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error) {
-	url, expires, err := s.Assets.URL(a)
+func (s *Server) manifest(r *http.Request, a catalog.Asset) (manifest, error) {
+	derived, status, err := s.Assets.Ladder(r.Context(), a)
 	if err != nil {
 		return manifest{}, err
 	}
 
-	derived, status, err := s.Assets.Ladder(ctx, a)
+	url, expires, err := s.Assets.PublicForm(a, derived)
 	if err != nil {
 		return manifest{}, err
 	}
@@ -277,14 +317,25 @@ func (s *Server) manifest(ctx context.Context, a catalog.Asset) (manifest, error
 			URL:         derivedURL,
 		})
 	}
-	ladder = append(ladder, rendition{
-		Name:        original,
-		ContentType: a.ContentType,
-		Width:       a.Width,
-		Height:      a.Height,
-		Size:        a.Size,
-		URL:         url,
-	})
+	// The bytes as uploaded, last. A withheld original is only named to a
+	// caller that could read it if the asset were private -- handing an
+	// anonymous reader a signed URL to it would publish it just as surely as
+	// leaving the object public did.
+	if s.mayReadOriginal(r, a) {
+		originalURL, originalExpires, err := s.Assets.URL(a)
+		if err != nil {
+			return manifest{}, err
+		}
+		ladder = append(ladder, rendition{
+			Name:        original,
+			ContentType: a.ContentType,
+			Width:       a.Width,
+			Height:      a.Height,
+			Size:        a.Size,
+			URL:         originalURL,
+			URLExpires:  originalExpires,
+		})
+	}
 
 	return manifest{
 		Key:              a.Key,
