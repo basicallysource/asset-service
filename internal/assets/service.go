@@ -364,10 +364,19 @@ func (s *Service) PublicForm(a catalog.Asset, ladder []catalog.Rendition) (url s
 	// widest rendition there is -- which is a video's largest encode, and,
 	// for an image stored before the copy existed, its largest rung until
 	// `asset-service withhold` has had one built.
+	//
+	// Of the same kind as the asset, though: a video's ladder carries a poster
+	// as well, and a still is not what a video is published as. Where a source
+	// is narrow enough that its one encode is no wider than its poster, taking
+	// the widest alone would hand a page a JPEG to play.
+	kind, _, _ := strings.Cut(a.ContentType, "/")
 	widest := -1
 	for i, r := range ladder {
 		if r.Name == derive.FullName {
 			return s.KeyURL(r.Key, a.Visibility)
+		}
+		if renditionKind, _, _ := strings.Cut(r.ContentType, "/"); renditionKind != kind {
+			continue
 		}
 		if widest < 0 || r.Width > ladder[widest].Width {
 			widest = i

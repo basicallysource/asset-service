@@ -304,7 +304,7 @@ func TestWhatIsPublishedIsTheFullCopyRatherThanARung(t *testing.T) {
 	}
 
 	// A rung is what there is until the copy exists.
-	rung := catalog.Rendition{Name: "w640", Key: "docs/photo-w640-abc.jpg", Width: 640}
+	rung := catalog.Rendition{Name: "w640", ContentType: "image/jpeg", Key: "docs/photo-w640-abc.jpg", Width: 640}
 	url, expires, err := service.PublicForm(asset, []catalog.Rendition{rung})
 	if err != nil || expires || !strings.HasSuffix(url, rung.Key) {
 		t.Errorf("PublicForm with only rungs = %q (expires %v), want the widest rung", url, expires)
@@ -312,9 +312,35 @@ func TestWhatIsPublishedIsTheFullCopyRatherThanARung(t *testing.T) {
 
 	// And the copy is preferred over every rung once it is there, whatever
 	// order the ladder arrives in.
-	full := catalog.Rendition{Name: "full", Key: "docs/photo-full-def.jpg", Width: 4032}
+	full := catalog.Rendition{Name: "full", ContentType: "image/jpeg", Key: "docs/photo-full-def.jpg", Width: 4032}
 	url, expires, err = service.PublicForm(asset, []catalog.Rendition{full, rung})
 	if err != nil || expires || !strings.HasSuffix(url, full.Key) {
 		t.Errorf("PublicForm = %q (expires %v), want the full copy at %q", url, expires, full.Key)
+	}
+}
+
+func TestAVideoIsPublishedAsAVideoAndNotAsItsPoster(t *testing.T) {
+	service, _ := newService(t)
+
+	clip, err := service.Put(context.Background(), PutRequest{
+		Namespace: "docs", Filename: "clip.mov", ContentType: "video/quicktime",
+		By: "test", Body: strings.NewReader("pretend this came off a phone too"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A source narrow enough that its one encode is no wider than the still
+	// that goes in front of it, which is where picking the widest alone hands
+	// a page an image to play.
+	poster := catalog.Rendition{Name: "poster", ContentType: "image/jpeg", Key: "docs/clip-poster-abc.jpg", Width: 640}
+	encode := catalog.Rendition{Name: "w640", ContentType: "video/mp4", Key: "docs/clip-w640-def.mp4", Width: 640}
+
+	url, _, err := service.PublicForm(clip.Asset, []catalog.Rendition{poster, encode})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(url, encode.Key) {
+		t.Errorf("PublicForm = %q, want the encode at %q", url, encode.Key)
 	}
 }
