@@ -95,6 +95,30 @@ func (m *Memory) Bytes(key string) ([]byte, bool) {
 	return o.body, ok
 }
 
+// SetPrivate stops the double reporting an object as public, the way real
+// storage stops serving it.
+func (m *Memory) SetPrivate(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	o, ok := m.objects[key]
+	if !ok {
+		return fmt.Errorf("objstore: set private %s: no such object", key)
+	}
+	o.public = false
+	m.objects[key] = o
+	return nil
+}
+
+// Public reports whether an object is stored readable by anyone, and whether
+// it is there at all. It is what an ACL decision can be asserted against.
+func (m *Memory) Public(key string) (public, exists bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.objects[key]
+	return o.public, ok
+}
+
 // Forget removes an object, for tests that need storage to lose one.
 func (m *Memory) Forget(key string) {
 	m.mu.Lock()

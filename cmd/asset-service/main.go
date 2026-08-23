@@ -62,6 +62,8 @@ func run(args []string) error {
 		return measureCommand(args)
 	case "requeue":
 		return requeueCommand(args)
+	case "withhold":
+		return withholdCommand(args)
 	case "stats":
 		return statsCommand(args)
 	case "work":
@@ -107,6 +109,8 @@ Usage:
   asset-service requeue [--rebuild]          build derived forms for assets
                                              that have none; --rebuild also
                                              replaces ones already made
+  asset-service withhold <namespace>         stop storage serving the camera
+                                             originals stored before it did
 
   asset-service work [flags]                 do the deriving for a service,
                                              on this machine

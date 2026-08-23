@@ -59,21 +59,11 @@ func withOrientation(t *testing.T, jpg []byte, orientation int, byteOrder string
 	return withAPP1(t, jpg, append([]byte("Exif\x00\x00"), tiff...))
 }
 
-// withAPP1 puts a segment in front of everything but the SOI marker, which is
-// where a camera's EXIF is.
+// withAPP1 puts an APP1 segment where a camera's EXIF goes: in front of
+// everything but the SOI marker.
 func withAPP1(t *testing.T, jpg, payload []byte) []byte {
 	t.Helper()
-	if len(jpg) < 2 || jpg[0] != 0xFF || jpg[1] != 0xD8 {
-		t.Fatal("that is not a JPEG")
-	}
-
-	segment := []byte{0xFF, 0xE1}
-	segment = binary.BigEndian.AppendUint16(segment, uint16(2+len(payload)))
-	segment = append(segment, payload...)
-
-	out := append([]byte{}, jpg[:2]...)
-	out = append(out, segment...)
-	return append(out, jpg[2:]...)
+	return withSegment(t, jpg, 0xE1, payload)
 }
 
 func TestALadderComesOutUprightWhateverTheTagSays(t *testing.T) {

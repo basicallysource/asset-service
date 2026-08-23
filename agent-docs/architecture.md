@@ -165,6 +165,38 @@ content type for both questions -- may this be queued, and how is it made --
 so the upload path and the worker cannot disagree about what the service can
 do. A new kind of asset is a backend there and nothing else.
 
+**Everything is stored; the appropriate minimum is served.** A file off a
+camera says where it was taken, when, and what took it. The bytes are kept
+exactly as they arrived -- an original is never rewritten, and that is the
+whole promise of storing one -- but a public URL must not republish any of
+that, so what is published is a copy without it: for an image the same pixels
+with the camera's segments taken out, byte for byte rather than re-encoded, and
+for a video the encodes, which are made from scratch anyway. The original of
+anything that comes off a camera is stored private and reachable only through a
+signed URL, the way a private asset already is, and offered only to a caller
+that may read the namespace.
+
+`internal/derive` answers "is this original withheld" for the same reason it
+answers "does this have derived forms": the upload path, which decides the
+ACL storage stores the object under, and the read path, which decides the URL
+to hand out, must not be able to disagree. If they did, the disagreement would
+be an object the whole internet can fetch. And the ACL is where it has to be
+enforced -- printing a different URL leaves the object exactly as readable as
+it was.
+
+What is kept in the copy is what the picture needs: JFIF, the ICC profile,
+Adobe's colour segment, and the orientation tag, which says which way up the
+pixels go rather than anything about the photographer. JPEG and PNG only, for
+the same reason their orientation is read and a WebP's is not. An asset with no
+derived public form -- a model, an archive, a text file -- is its own
+deliverable and is served exactly as it always was.
+
+Originals stored before this was true are still public objects; nothing in the
+service reaches back to them, because changing what a published URL does is an
+operator's decision rather than a deploy's. `asset-service withhold
+<namespace>` is that decision, one namespace at a time, and
+[`operations.md`](operations.md) says what it does and does not do.
+
 **A manifest says how big the original is.** Width and height as the picture is
 looked at, measured once at upload and stored beside them -- the axes exchanged
 where an orientation tag says the camera was held sideways, so the manifest and

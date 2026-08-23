@@ -121,7 +121,9 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, _, err := s.Assets.KeyURL(asset.Key, asset.Visibility)
+	// The bytes as uploaded, which is what there is to derive from -- signed
+	// where the original is withheld, since storage will not serve it openly.
+	source, _, err := s.Assets.URL(asset)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return

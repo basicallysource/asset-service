@@ -199,6 +199,38 @@ func (c *Client) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// SetPrivate rewrites an object's ACL and nothing else: the bytes are not
+// read, moved or re-uploaded, so this costs one request whatever the object
+// weighs. Storage stops serving it, and a signed URL becomes the only way in.
+//
+// It does not reach a cache. An object that has been public is in whatever
+// CDN and browser fetched it, for as long as its cache headers said, and no
+// call here retracts that.
+func (c *Client) SetPrivate(ctx context.Context, key string) error {
+	u := c.objectURL(key)
+	u.RawQuery = "acl="
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = 0
+	req.Header.Set("X-Amz-Acl", "private")
+	signRequest(req, c.creds, c.cfg.Region, service, emptyPayload, c.now())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("objstore: set private %s: %w", key, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return parseError("set private", key, resp)
+	}
+	io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
 // PublicURL is where anyone can fetch a public object.
 func (c *Client) PublicURL(key string) string {
 	return c.public + "/" + strings.TrimLeft(key, "/")

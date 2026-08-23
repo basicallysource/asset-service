@@ -121,7 +121,7 @@ The manifest. Public assets need no credential; private ones need
   "filename": "diagram.png",
   "visibility": "public",
   "created_at": "2026-08-21T04:12:07Z",
-  "url": "https://cdn.example.com/docs/diagram-3f7a91c2b04e.png",
+  "url": "https://cdn.example.com/docs/diagram-full-9a3c.png",
   "url_expires": false,
   "renditions_status": "ready",
   "renditions": [
@@ -129,8 +129,11 @@ The manifest. Public assets need no credential; private ones need
      "size": 18204, "url": "https://cdn.example.com/docs/diagram-w320-8c1d.webp"},
     {"name": "w640", "content_type": "image/webp", "width": 640, "height": 480,
      "size": 49118, "url": "https://cdn.example.com/docs/diagram-w640-2b7f.webp"},
+    {"name": "full", "content_type": "image/png", "width": 1600, "height": 1200,
+     "size": 48160, "url": "https://cdn.example.com/docs/diagram-full-9a3c.png"},
     {"name": "original", "content_type": "image/png", "size": 48213,
-     "url": "https://cdn.example.com/docs/diagram-3f7a91c2b04e.png"}
+     "url": "https://storage.example.com/docs/diagram-3f7a91c2b04e.png?X-Amz-Signature=...",
+     "url_expires": true}
   ]
 }
 ```
@@ -143,10 +146,23 @@ below what a camera produces, and an asset too small to shrink has no ladder to
 read a shape from. Zero means the service could not measure it.
 
 `renditions` is the ladder: every form of this asset that can be fetched,
-smallest first, with the bytes as uploaded last. Walk it for the first rung
-wide enough for where you are showing the image, and fall back to the last
-entry. Read it rather than assuming what is in it -- an image too small to
-shrink usefully has a ladder of one.
+smallest first, with the largest last. Walk it for the first rung wide enough
+for where you are showing the image, and fall back to the last entry. Read it
+rather than assuming what is in it -- an image too small to shrink usefully has
+a ladder of one.
+
+`full` is an image at the size it was uploaded, with what the camera wrote into
+it -- where it stood, when, which phone -- taken out. The pixels are identical:
+this is a byte-level strip and not a re-encode, so it costs no quality. It is
+what a page should publish at full resolution.
+
+`original` is the bytes exactly as uploaded. For anything that comes off a
+camera -- images and video -- it is offered only to a caller that may read the
+namespace, over a URL that expires, and its entry carries `"url_expires": true`.
+Do not publish or cache that URL. An anonymous reader does not see the entry at
+all, because a public asset's original still says where its photographer stood.
+Everything else -- a model, an archive, a text file -- is its own deliverable
+and its `original` is public and permanent, as before.
 
 An image's rungs are JPEG, or PNG where the image really uses transparency. A
 video's are H.264 in MP4, plus one still named `poster`. **Tell them apart by `content_type`, not by name**: the poster has a
@@ -174,14 +190,24 @@ rather than the pixel count -- a minute off a camera is tens of megabytes and
 the same frames re-encoded are a tenth of that. Either way there is a poster,
 so a page can show something without downloading a video at all.
 
-`url_expires` says whether `url` is stable or time-limited. A stable URL can be
-kept forever. An expiring one must be fetched again, not cached.
+`url` is the form of this asset that may be published: `full` for an image off
+a camera, the widest encode for a video, and the bytes as uploaded for
+everything else. It is empty until there is one, which for a camera upload
+means until `renditions_status` is `ready` -- the original is never the
+fallback, since withholding it is the point. `url_expires` says whether `url`
+is stable or time-limited: a stable URL can be kept forever, an expiring one
+must be fetched again rather than cached, and only a private asset's is
+expiring.
 
 ## GET /a/{key}
 
-`302` to the bytes, with no body. Public assets redirect to a durable URL and
-may be cached for a day; private assets redirect to a signed URL and are
-`private, no-store`.
+`302` to the published form, with no body -- the same URL a manifest's `url`
+gives. Public assets redirect to a durable URL and may be cached for a day;
+private assets redirect to a signed URL and are `private, no-store`.
+
+A camera upload whose published copy is not built yet answers `404` rather than
+redirecting to the original. Poll the manifest until `renditions_status` is
+`ready`.
 
 Use this when you want one permanent address to hand around. Use the `url` from
 a manifest when you can, since it skips the extra round trip.

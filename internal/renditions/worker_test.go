@@ -107,8 +107,13 @@ func TestUploadingAnImageQueuesItAndTheWorkerBuildsTheLadder(t *testing.T) {
 	if status != assets.LadderReady {
 		t.Errorf("status = %q, want ready", status)
 	}
-	if len(renditions) != 2 {
-		t.Fatalf("got %d renditions, want 2", len(renditions))
+	// Two rungs and the full-resolution copy that is what gets published.
+	if len(renditions) != 3 {
+		t.Fatalf("got %d renditions, want 2 rungs and a full copy", len(renditions))
+	}
+	if full := renditions[2]; full.Name != imaging.FullName || full.Width != 1200 || full.Height != 900 {
+		t.Errorf("the last rendition is %q at %dx%d, want %q at the original's own size",
+			full.Name, full.Width, full.Height, imaging.FullName)
 	}
 
 	for i, want := range []int{320, 640} {
@@ -163,8 +168,8 @@ func TestRebuildingIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(renditions) != 2 {
-		t.Errorf("got %d renditions after a second run, want 2", len(renditions))
+	if len(renditions) != 3 {
+		t.Errorf("got %d renditions after a second run, want 3", len(renditions))
 	}
 }
 

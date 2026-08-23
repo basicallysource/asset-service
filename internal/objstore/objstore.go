@@ -51,4 +51,8 @@ type Store interface {
 	PublicURL(key string) string
 	// SignedURL is a time-limited URL for a private object.
 	SignedURL(key string, ttl time.Duration) (string, error)
+	// SetPrivate stops storage serving an object to anyone who asks. It is
+	// for an object stored public before the service knew better; a new one
+	// is stored with the ACL it should have.
+	SetPrivate(ctx context.Context, key string) error
 }

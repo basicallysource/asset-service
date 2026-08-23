@@ -254,3 +254,67 @@ func TestPrivateAssetsGetAnExpiringURL(t *testing.T) {
 		t.Errorf("private URL = %q, expires = %v", url, expires)
 	}
 }
+
+func TestACameraOriginalIsStoredWhereStorageWillNotServeIt(t *testing.T) {
+	service, store := newService(t)
+
+	// The ACL is what makes an object readable by anyone, so it is where a
+	// withheld original has to be stopped -- not in the URL this service
+	// prints for it.
+	photo, err := service.Put(context.Background(), PutRequest{
+		Namespace: "docs", Filename: "photo.jpg", ContentType: "image/jpeg",
+		By: "test", Body: strings.NewReader("pretend this came off a phone"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public, exists := store.Public(photo.Asset.Key); !exists || public {
+		t.Errorf("a public JPEG's original is stored public=%v, want private", public)
+	}
+	if url, expires, err := service.URL(photo.Asset); err != nil || !expires || url == "" {
+		t.Errorf("URL = %q, expires %v, err %v; the original must be signed", url, expires, err)
+	}
+
+	// Everything that is its own deliverable is stored and served as before.
+	notes := put(t, service, "docs", "notes.txt", "nothing a camera wrote")
+	if public, exists := store.Public(notes.Asset.Key); !exists || !public {
+		t.Errorf("a text file is stored public=%v, want public", public)
+	}
+	if _, expires, err := service.URL(notes.Asset); err != nil || expires {
+		t.Errorf("a text file's URL expires=%v, err=%v", expires, err)
+	}
+}
+
+func TestWhatIsPublishedIsTheFullCopyRatherThanARung(t *testing.T) {
+	service, _ := newService(t)
+
+	photo, err := service.Put(context.Background(), PutRequest{
+		Namespace: "docs", Filename: "photo.jpg", ContentType: "image/jpeg",
+		By: "test", Body: strings.NewReader("pretend this came off a phone"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := photo.Asset
+
+	// Nothing derived yet: there is no published form, and the original is
+	// not the answer to fall back on.
+	if url, _, err := service.PublicForm(asset, nil); err != nil || url != "" {
+		t.Errorf("PublicForm with no ladder = %q, %v; want nothing", url, err)
+	}
+
+	// A rung is what there is until the copy exists.
+	rung := catalog.Rendition{Name: "w640", Key: "docs/photo-w640-abc.jpg", Width: 640}
+	url, expires, err := service.PublicForm(asset, []catalog.Rendition{rung})
+	if err != nil || expires || !strings.HasSuffix(url, rung.Key) {
+		t.Errorf("PublicForm with only rungs = %q (expires %v), want the widest rung", url, expires)
+	}
+
+	// And the copy is preferred over every rung once it is there, whatever
+	// order the ladder arrives in.
+	full := catalog.Rendition{Name: "full", Key: "docs/photo-full-def.jpg", Width: 4032}
+	url, expires, err = service.PublicForm(asset, []catalog.Rendition{full, rung})
+	if err != nil || expires || !strings.HasSuffix(url, full.Key) {
+		t.Errorf("PublicForm = %q (expires %v), want the full copy at %q", url, expires, full.Key)
+	}
+}
