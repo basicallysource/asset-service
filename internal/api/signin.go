@@ -47,6 +47,8 @@ type tokenResponse struct {
 type limitsBody struct {
 	MaxFileBytes   int64    `json:"max_file_bytes,omitempty"`
 	UploadsPerHour int      `json:"uploads_per_hour,omitempty"`
+	UploadsPerDay  int      `json:"uploads_per_day,omitempty"`
+	UploadsPerWeek int      `json:"uploads_per_week,omitempty"`
 	BytesPerDay    int64    `json:"bytes_per_day,omitempty"`
 	MaxLiveTokens  int      `json:"max_live_tokens,omitempty"`
 	ContentTypes   []string `json:"content_types,omitempty"`
@@ -196,6 +198,8 @@ func (s *Server) issue(r *http.Request, user identity.User) (tokenResponse, erro
 		Limits: limitsBody{
 			MaxFileBytes:   limits.MaxFileBytes,
 			UploadsPerHour: limits.UploadsPerHour,
+			UploadsPerDay:  limits.UploadsPerDay,
+			UploadsPerWeek: limits.UploadsPerWeek,
 			BytesPerDay:    limits.BytesPerDay,
 			MaxLiveTokens:  limits.MaxLiveTokens,
 			ContentTypes:   limits.ContentTypes,

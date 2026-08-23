@@ -99,7 +99,8 @@ Usage:
   asset-service keys revoke <name>           make a key stop working
 
   asset-service accounts list                who has signed in
-  asset-service accounts trust <handle>      raise an account's limits
+  asset-service accounts promote <handle>    make an account a contributor:
+                                             5x the limits, any content type
   asset-service accounts admin <handle>      let an account manage keys
   asset-service accounts block <handle>      stop an account uploading
 

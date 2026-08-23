@@ -13,8 +13,9 @@ const (
 	// TierUnknown is a self-served account: real enough to be attributable,
 	// unproven enough to be kept on a short leash.
 	TierUnknown = "unknown"
-	// TierTrusted is an account an operator has vouched for.
-	TierTrusted = "trusted"
+	// TierContributor is an account an operator has vouched for: higher
+	// limits, and more than just images.
+	TierContributor = "contributor"
 	// TierAdmin can mint credentials for any namespace. It is how the people
 	// who run this service use it without shell access to the host.
 	TierAdmin = "admin"
@@ -61,7 +62,7 @@ func (db *DB) AccountByID(ctx context.Context, id string) (Account, error) {
 // SetTier changes how much an account is trusted.
 func (db *DB) SetTier(ctx context.Context, id, tier string) error {
 	switch tier {
-	case TierUnknown, TierTrusted, TierAdmin, TierBlocked:
+	case TierUnknown, TierContributor, TierAdmin, TierBlocked:
 	default:
 		return fmt.Errorf("catalog: unknown tier %q", tier)
 	}
@@ -76,6 +77,26 @@ func (db *DB) SetTier(ctx context.Context, id, tier string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Accounts lists everyone who has ever signed in, newest first.
+func (db *DB) Accounts(ctx context.Context) ([]Account, error) {
+	rows, err := db.sql.QueryContext(ctx,
+		`SELECT id, provider, handle, tier, created_at FROM accounts ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: list accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []Account
+	for rows.Next() {
+		a, err := scanAccount(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, a)
+	}
+	return accounts, rows.Err()
 }
 
 // AccountsByHandle finds accounts by their human-readable name, which is what

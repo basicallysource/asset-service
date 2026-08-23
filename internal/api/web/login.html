@@ -106,6 +106,8 @@
     <!-- Loaded on a custom event rather than on load: there is no token to
          send until somebody has signed in. -->
     <div id="keys" hx-get="/login/keys" hx-trigger="signedin" hx-swap="innerHTML"></div>
+    <!-- Renders empty for anybody who is not an admin. -->
+    <div id="accounts" hx-get="/login/accounts" hx-trigger="signedin" hx-swap="innerHTML"></div>
   </div>
 </main>
 
@@ -189,6 +191,8 @@
     const parts = [];
     if (l.max_file_bytes) parts.push("up to " + bytes(l.max_file_bytes) + " per file");
     if (l.uploads_per_hour) parts.push(l.uploads_per_hour + " uploads an hour");
+    if (l.uploads_per_day) parts.push(l.uploads_per_day + " a day");
+    if (l.uploads_per_week) parts.push(l.uploads_per_week + " a week");
     if (l.bytes_per_day) parts.push(bytes(l.bytes_per_day) + " a day");
     if (l.content_types && l.content_types.length) parts.push(l.content_types.join(", "));
     $("limits").textContent = parts.length ? parts.join(" · ") : "No limits on this account.";
@@ -196,6 +200,7 @@
     show("account");
     htmx.process(document.body);
     htmx.trigger($("keys"), "signedin");
+    htmx.trigger($("accounts"), "signedin");
   };
 
   $("start").addEventListener("click", async () => {

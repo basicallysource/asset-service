@@ -1,0 +1,31 @@
+{{define "accounts"}}
+{{if .Visible}}
+<h2>Accounts</h2>
+
+<table>
+  <thead><tr><th>Handle</th><th>Tier</th><th>Today</th><th>Keys</th><th>Joined</th><th></th></tr></thead>
+  <tbody>
+  {{range .Accounts}}
+    <tr>
+      <td>{{.Handle}} <span class="muted">{{.ID}}</span></td>
+      <td>
+        <form hx-post="/login/accounts/{{.ID}}/tier" hx-target="#accounts" hx-swap="innerHTML" class="row">
+          <select name="tier">
+            {{$tier := .Tier}}
+            {{range $.Tiers}}<option value="{{.}}"{{if eq . $tier}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          <button type="submit" class="quiet">Set</button>
+        </form>
+      </td>
+      <td class="muted">{{.UploadsToday}}</td>
+      <td class="muted">{{.LiveKeys}}</td>
+      <td class="muted">{{.Joined}}</td>
+      <td></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{if not .Accounts}}<p class="muted">Nobody has signed in yet.</p>{{end}}
+{{if .Error}}<p class="bad">{{.Error}}</p>{{end}}
+{{end}}
+{{end}}

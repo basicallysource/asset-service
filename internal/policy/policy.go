@@ -22,9 +22,12 @@ type Limits struct {
 	// MaxFileBytes is the largest single upload. Zero means the service's own
 	// limit is the only one.
 	MaxFileBytes int64
-	// UploadsPerHour and BytesPerDay are rolling windows over what an account
-	// has actually stored. Zero means unlimited.
+	// UploadsPerHour, UploadsPerDay and UploadsPerWeek are rolling windows
+	// over how many files an account has actually stored; BytesPerDay is the
+	// same kind of window over their size. Zero means unlimited.
 	UploadsPerHour int
+	UploadsPerDay  int
+	UploadsPerWeek int
 	BytesPerDay    int64
 	// MaxLiveTokens caps how many usable credentials an account can hold.
 	MaxLiveTokens int
@@ -48,13 +51,17 @@ func For(tier string) Limits {
 		// memory of asking for it.
 		return Limits{TokenLifetime: 365 * 24 * time.Hour}
 
-	case catalog.TierTrusted:
-		// Someone an operator has vouched for. Still bounded, because a
-		// compromised laptop should not be able to fill a bucket overnight.
+	case catalog.TierContributor:
+		// Someone an operator has promoted: everything the open door gets,
+		// five times over, files big enough for video, and any content type.
+		// Still bounded, because a compromised laptop should not be able to
+		// fill a bucket overnight.
 		return Limits{
-			MaxFileBytes:   1 << 30,
-			UploadsPerHour: 5000,
-			BytesPerDay:    64 << 30,
+			MaxFileBytes:   160 << 20,
+			UploadsPerHour: 1000,
+			UploadsPerDay:  1000,
+			UploadsPerWeek: 2000,
+			BytesPerDay:    10 << 30,
 			MaxLiveTokens:  20,
 			TokenLifetime:  365 * 24 * time.Hour,
 		}
@@ -64,12 +71,15 @@ func For(tier string) Limits {
 
 	default:
 		// Anyone who signed in. Uploading the images for a documentation page
-		// is a handful of files and a few tens of megabytes; a hundred an
-		// hour and two gigabytes a day is far above that and far below
-		// anything worth abusing.
+		// is a handful of files and a few tens of megabytes; two hundred in a
+		// day covers several pages in one sitting. Anybody sustaining that
+		// pace across a week is either a contributor -- promote them -- or
+		// abusing the service.
 		return Limits{
 			MaxFileBytes:   32 << 20,
 			UploadsPerHour: 200,
+			UploadsPerDay:  200,
+			UploadsPerWeek: 400,
 			BytesPerDay:    2 << 30,
 			MaxLiveTokens:  5,
 			TokenLifetime:  90 * 24 * time.Hour,
@@ -143,7 +153,7 @@ var allowed = Decision{Allowed: true}
 // Evaluate answers whether an upload may proceed. It is a pure function of the
 // limits, the request and what the account has already used, so the rules can
 // be read and tested in one place rather than inferred from handlers.
-func Evaluate(limits Limits, up Upload, lastHour, lastDay catalog.Usage) Decision {
+func Evaluate(limits Limits, up Upload, lastHour, lastDay, lastWeek catalog.Usage) Decision {
 	if limits.MaxFileBytes < 0 {
 		return Decision{Code: CodeForbidden, Message: "this account may not upload"}
 	}
@@ -167,6 +177,22 @@ func Evaluate(limits Limits, up Upload, lastHour, lastDay catalog.Usage) Decisio
 			Code:       CodeRateLimited,
 			Message:    "this account has reached its hourly upload limit",
 			RetryAfter: time.Hour,
+		}
+	}
+
+	if limits.UploadsPerDay > 0 && lastDay.Uploads >= limits.UploadsPerDay {
+		return Decision{
+			Code:       CodeRateLimited,
+			Message:    "this account has reached its daily upload limit",
+			RetryAfter: 24 * time.Hour,
+		}
+	}
+
+	if limits.UploadsPerWeek > 0 && lastWeek.Uploads >= limits.UploadsPerWeek {
+		return Decision{
+			Code:       CodeRateLimited,
+			Message:    "this account has reached its weekly upload limit",
+			RetryAfter: 7 * 24 * time.Hour,
 		}
 	}
 

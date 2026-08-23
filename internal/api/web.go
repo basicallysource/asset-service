@@ -13,17 +13,19 @@ import (
 	"github.com/basicallysource/asset-service/internal/httpx"
 )
 
-// A small page for the two things people need a screen for: signing in, and
-// handing somebody else a key.
+// A small page for the things people need a screen for: signing in, handing
+// somebody else a key, and -- for an admin -- moving accounts between tiers.
 //
 // It holds its token in the tab rather than in a cookie, and attaches it by
 // hand to every request. Nothing here is an ambient credential, so there is
 // nothing for another site to make this page do on a visitor's behalf.
 
-//go:embed web/login.html web/keys.html web/htmx.min.js
+//go:embed web/login.html web/keys.html web/accounts.html web/htmx.min.js
 var webFiles embed.FS
 
 var keysTemplate = template.Must(template.ParseFS(webFiles, "web/keys.html"))
+
+var accountsTemplate = template.Must(template.ParseFS(webFiles, "web/accounts.html"))
 
 type keysView struct {
 	Keys     []keyRow
@@ -49,6 +51,24 @@ type keyRow struct {
 type mintedKey struct {
 	Name  string
 	Token string
+}
+
+type accountsView struct {
+	// Visible is whether this principal gets the section at all. The list of
+	// who signed in is an administrator's view, nobody else's.
+	Visible  bool
+	Accounts []accountRow
+	Tiers    []string
+	Error    string
+}
+
+type accountRow struct {
+	ID           string
+	Handle       string
+	Tier         string
+	UploadsToday int
+	LiveKeys     int
+	Joined       string
 }
 
 // firstNamespace is where this principal can write, for telling them so.
@@ -214,5 +234,71 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := keysTemplate.ExecuteTemplate(w, "keys", view); err != nil {
 		s.Logger.Error("render keys", "error", err)
+	}
+}
+
+// accountsFragment renders the account list for an administrator. For anybody
+// else it renders nothing: the section simply does not exist for them.
+func (s *Server) accountsFragment(w http.ResponseWriter, r *http.Request) {
+	s.renderAccounts(w, r, "")
+}
+
+// setTierForm is the page's version of POST /v1/accounts/{id}/tier: same
+// rules, HTML back.
+func (s *Server) setTierForm(w http.ResponseWriter, r *http.Request) {
+	principal := auth.From(r.Context())
+	if principal == nil {
+		httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "authentication required")
+		return
+	}
+	if !principal.Holds(auth.ActionAdmin) {
+		httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden, "only an administrator may change a tier")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.renderAccounts(w, r, "That form did not parse.")
+		return
+	}
+
+	if _, err := s.applyTier(r.Context(), r.PathValue("id"), r.PostFormValue("tier"), principal.Name); err != nil {
+		s.renderAccounts(w, r, "Could not change that tier: "+err.Error())
+		return
+	}
+	s.renderAccounts(w, r, "")
+}
+
+// renderAccounts draws every account and where it stands, for an admin.
+func (s *Server) renderAccounts(w http.ResponseWriter, r *http.Request, message string) {
+	principal := auth.From(r.Context())
+	if principal == nil {
+		httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "authentication required")
+		return
+	}
+
+	view := accountsView{
+		Visible: principal.Holds(auth.ActionAdmin),
+		Tiers:   []string{catalog.TierUnknown, catalog.TierContributor, catalog.TierAdmin, catalog.TierBlocked},
+		Error:   message,
+	}
+	if view.Visible {
+		bodies, err := s.accountBodies(r.Context())
+		if err != nil {
+			view.Error = "Could not read the account list."
+		}
+		for _, body := range bodies {
+			view.Accounts = append(view.Accounts, accountRow{
+				ID:           body.ID,
+				Handle:       body.Handle,
+				Tier:         body.Tier,
+				UploadsToday: body.UploadsToday,
+				LiveKeys:     body.LiveKeys,
+				Joined:       body.CreatedAt.Format("2 Jan 2006"),
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := accountsTemplate.ExecuteTemplate(w, "accounts", view); err != nil {
+		s.Logger.Error("render accounts", "error", err)
 	}
 }

@@ -153,7 +153,7 @@ scoped keys.
 
 ```sh
 asset-service accounts list             # who has signed in, and what they have used
-asset-service accounts trust <handle>   # raise their limits
+asset-service accounts promote <handle> # contributor: 5x limits, any content type
 asset-service accounts admin <handle>   # let them manage keys
 asset-service accounts block <handle>   # stop them, and revoke their keys
 asset-service accounts reset <handle>   # back to the default limits
