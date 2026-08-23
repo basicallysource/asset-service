@@ -144,7 +144,11 @@ func decode(src []byte) (image.Image, error) {
 	if bounds := decoded.Bounds(); bounds.Dx() < 1 || bounds.Dy() < 1 {
 		return nil, fmt.Errorf("%w: zero-sized image", ErrUnsupported)
 	}
-	return decoded, nil
+	// A phone stores the sensor's own frame and an EXIF tag saying which way
+	// up it was held; the standard library's decoders ignore the tag entirely.
+	// Bake it in here, before anything is scaled, so every rung comes out
+	// upright and nothing downstream has to know the tag exists.
+	return orient(decoded, orientation(src)), nil
 }
 
 // render resizes to width and encodes, preserving the aspect ratio and

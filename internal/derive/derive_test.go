@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"os/exec"
@@ -114,5 +115,63 @@ func TestBytesThatLieAboutTheirTypeAreNotWorthRetrying(t *testing.T) {
 	_, err := Ladder(context.Background(), path, "image/png", Options{})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("got %v, want ErrUnsupported", err)
+	}
+}
+
+// phonePhoto writes the shape a phone actually hands over: landscape pixels,
+// and an EXIF APP1 segment whose orientation tag says to stand them up. The
+// tag reader itself is tested in internal/imaging; this is about what the
+// measurement path does with what it says.
+func phonePhoto(t *testing.T, width, height int) string {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			img.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 90, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	jpg := buf.Bytes()
+
+	// A TIFF block, big-endian, holding one IFD0 entry: tag 0x0112, a SHORT,
+	// value 6 -- a quarter turn clockwise.
+	tiff := []byte{'M', 'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0}
+	payload := append([]byte("Exif\x00\x00"), tiff...)
+	segment := append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+
+	// In front of everything but the SOI marker, which is where a camera's is.
+	withEXIF := append([]byte{}, jpg[:2]...)
+	withEXIF = append(withEXIF, segment...)
+	withEXIF = append(withEXIF, jpg[2:]...)
+
+	path := filepath.Join(t.TempDir(), "photo.jpg")
+	if err := os.WriteFile(path, withEXIF, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestAnImageIsMeasuredInTheShapeItIsLookedAtIn(t *testing.T) {
+	width, height, err := Dimensions(context.Background(), phonePhoto(t, 1200, 900), "image/jpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stored 1200x900; the tag says it is a 900x1200 picture, and that is the
+	// box a page has to reserve for it.
+	if width != 900 || height != 1200 {
+		t.Errorf("measured %dx%d, want 900x1200", width, height)
+	}
+
+	// An image with nothing to say about orientation measures as it is stored.
+	width, height, err = Dimensions(context.Background(), imageFile(t, 1200, 900), "image/png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if width != 1200 || height != 900 {
+		t.Errorf("measured %dx%d, want 1200x900", width, height)
 	}
 }
