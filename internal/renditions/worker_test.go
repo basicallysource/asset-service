@@ -3,6 +3,7 @@ package renditions
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -297,6 +298,31 @@ func TestAttemptsAreCappedAndTheJobEndsUpFailed(t *testing.T) {
 	}
 }
 
+// A job that kills its worker every time must run out of attempts. Before
+// this, a release left attempts at zero, so the restarted worker was handed
+// the same poison pill for ever and every other namespace queued behind it.
+func TestAJobThatKeepsKillingTheWorkerIsGivenUpOn(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	f.upload(t, "river.png", "image/png", photo(t, 1200, 900))
+
+	const limit = 3
+	for i := 0; i < limit; i++ {
+		if _, err := f.db.ClaimJob(ctx, time.Now().UTC()); err != nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+		// The worker dies here, so it never reports: only the release runs.
+		if _, err := f.db.ReleaseClaimedJobs(ctx, limit); err != nil {
+			t.Fatalf("release %d: %v", i, err)
+		}
+	}
+
+	if _, err := f.db.ClaimJob(ctx, time.Now().UTC()); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("a job past its attempt limit was claimed again: err = %v", err)
+	}
+}
+
 func TestWorkRequeuedAfterACrashIsPickedUpAgain(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -311,7 +337,7 @@ func TestWorkRequeuedAfterACrashIsPickedUpAgain(t *testing.T) {
 		t.Fatal("a job already claimed was claimed again")
 	}
 
-	released, err := f.db.ReleaseClaimedJobs(ctx)
+	released, err := f.db.ReleaseClaimedJobs(ctx, DefaultMaxAttempts)
 	if err != nil || released != 1 {
 		t.Fatalf("released %d jobs, err = %v", released, err)
 	}

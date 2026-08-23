@@ -69,6 +69,17 @@ func (s *Server) admin(w http.ResponseWriter, r *http.Request, namespace string)
 
 // claimJob hands out the oldest job that is due, or 204 when there is nothing
 // to do. A claim is not a lease the worker has to renew; it times out.
+// maxAttempts is how many times one asset may be tried before the queue gives
+// up on it. Shared by the reported-failure path and by the stale-claim
+// release, so a job that crashes its worker is bounded by the same number as
+// one that fails politely.
+func (s *Server) maxAttempts() int {
+	if s.RenditionAttempts > 0 {
+		return s.RenditionAttempts
+	}
+	return catalog.DefaultJobAttempts
+}
+
 func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 	// A claim may be for any namespace, so the caller has to administer all of
 	// them. Asking after the job is drawn would mean drawing jobs the caller
@@ -78,7 +89,7 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if released, err := s.Catalog.ReleaseStaleJobs(ctx, time.Now().UTC().Add(-staleAfter)); err != nil {
+	if released, err := s.Catalog.ReleaseStaleJobs(ctx, time.Now().UTC().Add(-staleAfter), s.maxAttempts()); err != nil {
 		s.writeAssetError(w, r, err)
 		return
 	} else if released > 0 {
@@ -210,12 +221,8 @@ func (s *Server) finishJob(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if report.Error != "" && !report.Permanent {
-		attempts := s.RenditionAttempts
-		if attempts <= 0 {
-			attempts = catalog.DefaultJobAttempts
-		}
 		if err := s.Catalog.FailJob(ctx, key, report.Error,
-			time.Now().UTC().Add(retryAfterFailure), attempts); err != nil {
+			time.Now().UTC().Add(retryAfterFailure), s.maxAttempts()); err != nil {
 			s.writeAssetError(w, r, err)
 			return
 		}
