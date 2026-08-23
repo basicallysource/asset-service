@@ -156,14 +156,47 @@ func (db *DB) FailJob(ctx context.Context, assetKey, reason string, retryAt time
 // ReleaseClaimedJobs puts work that was in flight back in the queue. A process
 // that dies mid-job leaves its row saying "running"; without this, that asset
 // would never get its renditions.
-func (db *DB) ReleaseClaimedJobs(ctx context.Context) (int64, error) {
-	res, err := db.sql.ExecContext(ctx, `
-		UPDATE jobs SET state = 'pending', updated_at = ? WHERE state = 'running'`,
+//
+// The release counts as an attempt, which is the whole point: a job that KILLS
+// its worker never reaches FailJob, so before this it went back to 'pending'
+// with attempts still 0 and was handed straight back to the restarted worker,
+// for ever. See releaseSQL.
+func (db *DB) ReleaseClaimedJobs(ctx context.Context, maxAttempts int) (int64, error) {
+	res, err := db.sql.ExecContext(ctx, releaseSQL(false),
+		maxAttempts, maxAttempts, deathReason,
 		time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, fmt.Errorf("catalog: release claimed jobs: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// deathReason is what a job says when it ran out of attempts without any
+// worker ever reporting on it. Distinct from a reported failure on purpose:
+// this is the shape of a poison pill, and it should read like one.
+const deathReason = "worker stopped without reporting; out of attempts"
+
+// releaseSQL puts running jobs back, charging each one an attempt and retiring
+// it once it has used them all.
+//
+// Charging the attempt here is the fix for a job that takes the worker down
+// with it. On 2026-08-23 a 4K video OOM-killed the rendition worker; systemd
+// restarted it, it claimed the same job, and died again, and because nothing
+// ever called FailJob the attempt count stayed at zero and the queue was
+// blocked for every namespace until a human noticed. Bounding it here means
+// the worst case is maxAttempts crashes, not an outage.
+func releaseSQL(stale bool) string {
+	where := "WHERE state = 'running'"
+	if stale {
+		where += " AND updated_at < ?"
+	}
+	return `
+		UPDATE jobs
+		SET attempts = attempts + 1,
+		    state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'pending' END,
+		    last_error = CASE WHEN attempts + 1 >= ? THEN ? ELSE last_error END,
+		    updated_at = ?
+		` + where
 }
 
 // DeleteRenditions forgets an asset's derived forms so they can be made again.
@@ -184,10 +217,9 @@ func (db *DB) DeleteRenditions(ctx context.Context, assetKey string) error {
 // worker in this process, a crash is caught at startup; with the worker on
 // another machine, nothing local notices it dying, so a claim that has gone
 // quiet has to time out instead.
-func (db *DB) ReleaseStaleJobs(ctx context.Context, before time.Time) (int64, error) {
-	res, err := db.sql.ExecContext(ctx, `
-		UPDATE jobs SET state = 'pending', updated_at = ?
-		WHERE state = 'running' AND updated_at < ?`,
+func (db *DB) ReleaseStaleJobs(ctx context.Context, before time.Time, maxAttempts int) (int64, error) {
+	res, err := db.sql.ExecContext(ctx, releaseSQL(true),
+		maxAttempts, maxAttempts, deathReason,
 		time.Now().UTC().Format(time.RFC3339Nano), before.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, fmt.Errorf("catalog: release stale jobs: %w", err)

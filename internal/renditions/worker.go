@@ -83,7 +83,7 @@ func (w *Worker) Run(ctx context.Context) {
 	w.applyDefaults()
 
 	// Anything left claimed belongs to a process that is gone.
-	if released, err := w.Catalog.ReleaseClaimedJobs(ctx); err != nil {
+	if released, err := w.Catalog.ReleaseClaimedJobs(ctx, w.MaxAttempts); err != nil {
 		w.Logger.Error("renditions: release claimed jobs", "error", err)
 	} else if released > 0 {
 		w.Logger.Info("renditions: requeued work from a previous run", "jobs", released)
