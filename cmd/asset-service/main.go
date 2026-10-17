@@ -152,6 +152,7 @@ func serve() error {
 			return fmt.Errorf("create spool directory: %w", err)
 		}
 	}
+	api.RemoveAbandonedUploads(cfg.SpoolDir)
 
 	db, err := catalog.Open(cfg.DBPath)
 	if err != nil {

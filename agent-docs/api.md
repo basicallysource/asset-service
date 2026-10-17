@@ -104,6 +104,48 @@ Other answers: `400` unusable namespace, filename, visibility or empty body;
 already holds different bytes (a hash prefix collision, which is refused rather
 than resolved); `413` past the configured size limit.
 
+## POST /v1/uploads, PATCH /v1/uploads/{id}, POST /v1/uploads/{id}/finish
+
+The same upload as `POST /v1/assets`, sent in parts, for a client whose
+requests pass through a proxy or CDN that caps a request body below the size
+of the file (Cloudflare's free plan stops at 100 MB). Finishing stores the
+assembled bytes exactly as one body would be stored: the same checks, the same
+key, the same manifest.
+
+Open the upload with the parameters and `Content-Type` of `POST /v1/assets`,
+no body, and `Upload-Length` set to the whole size in bytes. The size and type
+are checked against the caller's limits now, so a file that would be refused is
+refused before any of it is sent. `201` answers `{"id", "offset", "length",
+"expires_at"}`, with `Location` naming the upload.
+
+Send the bytes in order with `PATCH /v1/uploads/{id}`, each body the next part
+and `Upload-Offset` saying where it starts. `204` answers with `Upload-Offset`
+at the new end. A part lands whole or not at all, so a part whose request
+failed is sent again at the same offset. `409` says the offset is not where the
+upload stands, and its `Upload-Offset` says where it does; `413` says the part
+goes past `Upload-Length`.
+
+`POST /v1/uploads/{id}/finish` stores it and answers as `POST /v1/assets` does;
+`409` until every byte is there. After that the upload is gone.
+
+```sh
+id=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: video/mp4" \
+  -H "Upload-Length: $(wc -c < clip.mp4)" \
+  "https://assets.example.com/v1/uploads?namespace=media&filename=clip.mp4" | jq -r .id)
+split -b 50m clip.mp4 part- && offset=0
+for p in part-*; do
+  curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Upload-Offset: $offset" \
+    --data-binary @"$p" "https://assets.example.com/v1/uploads/$id"
+  offset=$((offset + $(wc -c < "$p")))
+done
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "https://assets.example.com/v1/uploads/$id/finish"
+```
+
+Only the credential that opened an upload may add to it or finish it; to any
+other it is a `404`. One caller may have four open at once (`429` past that).
+An upload nobody adds to for an hour is dropped, and a restart drops every open
+one: the client opens it again.
+
 ## GET /v1/assets/{key}
 
 The manifest. Public assets need no credential; private ones need
