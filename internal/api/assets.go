@@ -75,10 +75,23 @@ type rendition struct {
 const original = "original"
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	req, ok := s.uploadRequest(w, r, r.ContentLength)
+	if !ok {
+		return
+	}
+	req.Body = r.Body
+	s.put(w, r, req)
+}
+
+// uploadRequest checks an upload's caller, namespace, visibility and account
+// limits, for a body of size bytes (-1 when not yet known), and says what is
+// to be stored. Both ways of uploading -- one body, or one in parts -- start
+// here, so neither can check less than the other.
+func (s *Server) uploadRequest(w http.ResponseWriter, r *http.Request, size int64) (assets.PutRequest, bool) {
 	principal := auth.From(r.Context())
 	if principal == nil {
 		httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized, "authentication required")
-		return
+		return assets.PutRequest{}, false
 	}
 
 	query := r.URL.Query()
@@ -86,7 +99,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if !assets.ValidNamespace(namespace) {
 		httpx.Error(w, http.StatusBadRequest, httpx.CodeBadRequest,
 			"namespace must be lowercase letters, digits and dashes")
-		return
+		return assets.PutRequest{}, false
 	}
 
 	visibility := query.Get("visibility")
@@ -95,20 +108,20 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if visibility != catalog.VisibilityPublic && visibility != catalog.VisibilityPrivate {
 		httpx.Error(w, http.StatusBadRequest, httpx.CodeBadRequest, "visibility must be public or private")
-		return
+		return assets.PutRequest{}, false
 	}
 
 	if !principal.Can(auth.ActionWrite, namespace) {
 		httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden, "no write access to namespace "+namespace)
-		return
+		return assets.PutRequest{}, false
 	}
 
-	limits, ok := s.allowed(w, r, principal)
+	limits, ok := s.allowed(w, r, principal, size)
 	if !ok {
-		return
+		return assets.PutRequest{}, false
 	}
 
-	result, err := s.Assets.Put(r.Context(), assets.PutRequest{
+	return assets.PutRequest{
 		Namespace:   namespace,
 		Filename:    query.Get("filename"),
 		ContentType: r.Header.Get("Content-Type"),
@@ -116,8 +129,12 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		By:          principal.Name,
 		AccountID:   principal.Account,
 		MaxBytes:    limits.MaxFileBytes,
-		Body:        r.Body,
-	})
+	}, true
+}
+
+// put stores an upload's body and answers with the asset's manifest.
+func (s *Server) put(w http.ResponseWriter, r *http.Request, req assets.PutRequest) {
+	result, err := s.Assets.Put(r.Context(), req)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
@@ -140,7 +157,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 // allowed applies the uploader's account limits. An operator-minted key has no
 // account and no limits: it was made by hand on the host, which is already as
 // trusted as the service itself.
-func (s *Server) allowed(w http.ResponseWriter, r *http.Request, principal *auth.Principal) (policy.Limits, bool) {
+func (s *Server) allowed(w http.ResponseWriter, r *http.Request, principal *auth.Principal, size int64) (policy.Limits, bool) {
 	if principal.Account == "" {
 		return policy.Unlimited, true
 	}
@@ -173,7 +190,7 @@ func (s *Server) allowed(w http.ResponseWriter, r *http.Request, principal *auth
 
 	decision := policy.Evaluate(limits, policy.Upload{
 		ContentType: r.Header.Get("Content-Type"),
-		Size:        r.ContentLength,
+		Size:        size,
 	}, lastHour, lastDay, lastWeek)
 	if decision.Allowed {
 		return limits, true

@@ -5,6 +5,7 @@ smaller copies a web page should actually download, and hands out URLs to them.
 
 ```
 POST /v1/assets?namespace=docs&filename=diagram.png     upload, returns a manifest
+POST /v1/uploads  PATCH /v1/uploads/{id}  POST …/finish  the same upload in parts
 GET  /v1/assets/{key}                                   the manifest
 GET  /a/{key}                                           302 to the bytes
 GET  /healthz  GET /readyz                              liveness, readiness

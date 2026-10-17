@@ -262,8 +262,10 @@ With a label-driven proxy instead, add its labels in the same override file.
 One thing to check before putting this behind a CDN or proxy: upload bodies can
 be large, and several proxies cap request bodies well below this service's
 limit. Cloudflare's free plan stops at 100 MB, for instance. Either raise the
-proxy's cap, lower `ASSET_MAX_UPLOAD_BYTES` to match, or point uploads at the
-origin.
+proxy's cap, lower `ASSET_MAX_UPLOAD_BYTES` to match, point uploads at the
+origin, or have clients send larger files in parts (`POST /v1/uploads`, in
+[`api.md`](api.md)), each part under the cap. An open upload's bytes wait in
+`ASSET_SPOOL_DIR`, up to four uploads per caller.
 
 ## Releases
 

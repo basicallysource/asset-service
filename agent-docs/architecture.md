@@ -290,7 +290,10 @@ belongs in the principal's scopes or in a check beside the visibility check in
 
 **Large uploads.** A body is spooled to disk and stored in a single PUT, which
 is fine to a few gigabytes and simple. Multipart upload belongs in `objstore`
-behind the same `Put`. Presigned direct-to-bucket uploads are further away
+behind the same `Put`. A client that cannot send a large body in one request,
+because a proxy in front caps it, sends it in parts (`POST /v1/uploads`): the
+parts are assembled in the spool folder and the whole goes through the same
+`Put`, so there is one way an asset is stored. Presigned direct-to-bucket uploads are further away
 still, and deliberately: the service hashing the bytes itself is what makes a
 key unable to lie, and a presigned PUT surrenders that until the service
 re-reads what landed. That complexity buys nothing while the upload cap is

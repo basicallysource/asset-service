@@ -48,6 +48,8 @@ type Server struct {
 
 	// readyProbe rate-limits the storage check behind /readyz.
 	readyProbe storageProbe
+	// uploads is the uploads in parts still open (uploads.go).
+	uploads uploads
 }
 
 // CatalogKeys adapts the catalog to what auth needs, which is one lookup. It
@@ -100,6 +102,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("POST /v1/assets", s.upload)
+	mux.HandleFunc("POST /v1/uploads", s.openUpload)
+	mux.HandleFunc("PATCH /v1/uploads/{id}", s.appendUpload)
+	mux.HandleFunc("POST /v1/uploads/{id}/finish", s.finishUpload)
 	mux.HandleFunc("GET /v1/assets/{key...}", s.metadata)
 	mux.HandleFunc("GET /a/{key...}", s.deliver)
 	mux.HandleFunc("POST /v1/jobs/claim", s.claimJob)
