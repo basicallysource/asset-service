@@ -69,7 +69,7 @@ func requeueCommand(args []string) error {
 				return err
 			}
 		}
-		if err := db.Enqueue(ctx, asset.Key, now); err != nil {
+		if err := db.Enqueue(ctx, asset.Key, derive.Cost(asset.ContentType), now); err != nil {
 			return err
 		}
 		queued++

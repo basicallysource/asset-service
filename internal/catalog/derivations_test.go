@@ -37,7 +37,7 @@ func TestFinishedWorkIsLogged(t *testing.T) {
 	storeAsset(t, db, "n/broken-def.png", "image/png")
 
 	now := time.Now().UTC()
-	if err := db.Enqueue(ctx, "n/part-abc.stl", now); err != nil {
+	if err := db.Enqueue(ctx, "n/part-abc.stl", 2, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ClaimJob(ctx, now); err != nil {
@@ -47,7 +47,7 @@ func TestFinishedWorkIsLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := db.Enqueue(ctx, "n/broken-def.png", now); err != nil {
+	if err := db.Enqueue(ctx, "n/broken-def.png", 0, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ClaimJob(ctx, now); err != nil {
@@ -91,7 +91,7 @@ func TestOrphanedJobsAreNotLogged(t *testing.T) {
 	db := openTest(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	if err := db.Enqueue(ctx, "n/ghost.stl", now); err != nil {
+	if err := db.Enqueue(ctx, "n/ghost.stl", 2, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ClaimJob(ctx, now); err != nil {

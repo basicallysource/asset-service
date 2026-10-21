@@ -154,7 +154,7 @@ func TestRebuildingIsIdempotent(t *testing.T) {
 	before := f.store.Len()
 
 	// Ask again, as a retry or a restart would.
-	if err := f.db.Enqueue(ctx, asset.Key, time.Now().UTC()); err != nil {
+	if err := f.db.Enqueue(ctx, asset.Key, derive.Cost(asset.ContentType), time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.worker.processOne(ctx); err != nil {
