@@ -80,6 +80,21 @@ func WithholdsOriginal(contentType string) bool {
 	return imaging.Publishable(contentType) || video.Supported(contentType)
 }
 
+// Cost ranks how long an asset's derived forms take to build, cheapest first:
+// images, then video, then models. The queue takes work in this order, so the
+// quick jobs are not held up behind the slow ones.
+func Cost(contentType string) int {
+	switch {
+	case imaging.Supported(contentType):
+		return 0
+	case video.Supported(contentType):
+		return 1
+	case model.Supported(contentType):
+		return 2
+	}
+	return 3
+}
+
 // Ladder produces every derived form of the asset at path, smallest first. An
 // asset that is already small enough produces nothing, which is not an error.
 func Ladder(ctx context.Context, path, contentType string, opts Options) ([]Rendition, error) {

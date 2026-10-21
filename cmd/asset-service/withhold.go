@@ -91,7 +91,7 @@ func withholdCommand(args []string) error {
 			return err
 		}
 		if !publishable(asset, ladder) {
-			if err := db.Enqueue(ctx, asset.Key, time.Now().UTC()); err != nil {
+			if err := db.Enqueue(ctx, asset.Key, derive.Cost(asset.ContentType), time.Now().UTC()); err != nil {
 				return err
 			}
 			queued++

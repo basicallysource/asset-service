@@ -106,6 +106,12 @@ at a time is deliberate: this usually runs beside other services on a small
 machine, and both resizing and transcoding will take every core they are
 offered. Encoding is pinned to one thread for the same reason.
 
+**The queue takes the cheapest work first.** A job carries a cost -- images,
+then video, then models, as `derive.Cost` ranks them -- and is claimed by cost,
+then by age. With one worker that is what keeps a thumbnail that arrives behind
+a hundred minute-long slices from waiting for all of them: the slow work is not
+reordered among itself, only overtaken by the work that takes a second.
+
 **Derived images are JPEG, or PNG when the pixels need it.** WebP is roughly a
 quarter smaller and that difference is real, but a page's images are things
 people take away: right-click, save, open in something. A file a good number of

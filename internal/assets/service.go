@@ -247,7 +247,7 @@ func (s *Service) queue(ctx context.Context, asset catalog.Asset) {
 	if !derive.Supported(asset.ContentType) {
 		return
 	}
-	if err := s.Catalog.Enqueue(ctx, asset.Key, s.now()); err != nil {
+	if err := s.Catalog.Enqueue(ctx, asset.Key, derive.Cost(asset.ContentType), s.now()); err != nil {
 		s.logger().Error("queue renditions", "asset", asset.Key, "error", err)
 		return
 	}

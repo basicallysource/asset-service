@@ -83,22 +83,23 @@ func (db *DB) RenditionsFor(ctx context.Context, assetKey string) ([]Rendition, 
 }
 
 // Enqueue asks for an asset's renditions to be produced. Asking twice while
-// the first is outstanding changes nothing.
-func (db *DB) Enqueue(ctx context.Context, assetKey string, now time.Time) error {
+// the first is outstanding changes nothing. Cost ranks the work, cheapest
+// first; derive.Cost says what a given content type is.
+func (db *DB) Enqueue(ctx context.Context, assetKey string, cost int, now time.Time) error {
 	stamp := now.UTC().Format(time.RFC3339Nano)
 	_, err := db.sql.ExecContext(ctx, `
-		INSERT INTO jobs (asset_key, state, attempts, next_attempt_at, created_at, updated_at)
-		VALUES (?, 'pending', 0, ?, ?, ?)
+		INSERT INTO jobs (asset_key, state, attempts, next_attempt_at, cost, created_at, updated_at)
+		VALUES (?, 'pending', 0, ?, ?, ?, ?)
 		ON CONFLICT (asset_key) DO NOTHING`,
-		assetKey, stamp, stamp, stamp)
+		assetKey, stamp, cost, stamp, stamp)
 	if err != nil {
 		return fmt.Errorf("catalog: enqueue %s: %w", assetKey, err)
 	}
 	return nil
 }
 
-// ClaimJob takes the oldest job that is due, or returns ErrNotFound when there
-// is nothing to do.
+// ClaimJob takes the cheapest job that is due, the oldest among equals, or
+// returns ErrNotFound when there is nothing to do.
 func (db *DB) ClaimJob(ctx context.Context, now time.Time) (Job, error) {
 	stamp := now.UTC().Format(time.RFC3339Nano)
 	row := db.sql.QueryRowContext(ctx, `
@@ -106,7 +107,7 @@ func (db *DB) ClaimJob(ctx context.Context, now time.Time) (Job, error) {
 		WHERE asset_key = (
 			SELECT asset_key FROM jobs
 			WHERE state = 'pending' AND next_attempt_at <= ?
-			ORDER BY next_attempt_at LIMIT 1
+			ORDER BY cost, next_attempt_at LIMIT 1
 		)
 		RETURNING asset_key, state, attempts, last_error`, stamp, stamp)
 
