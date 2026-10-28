@@ -45,6 +45,9 @@ type Server struct {
 	// RenditionAttempts is how many times a job may fail before it is left
 	// alone, for work reported by a worker on another machine.
 	RenditionAttempts int
+	// NoSlicing is a deployment that does not slice models: a claimed model
+	// job tells its worker to render only, and a model's manifest says so.
+	NoSlicing bool
 
 	// readyProbe rate-limits the storage check behind /readyz.
 	readyProbe storageProbe

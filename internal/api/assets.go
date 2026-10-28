@@ -10,6 +10,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/httpx"
+	"github.com/basicallysource/asset-service/internal/model"
 	"github.com/basicallysource/asset-service/internal/policy"
 )
 
@@ -57,6 +58,9 @@ type manifest struct {
 	URLExpires       bool        `json:"url_expires"`
 	Renditions       []rendition `json:"renditions"`
 	RenditionsStatus string      `json:"renditions_status"`
+	// Slicing explains the missing slice reports of a model on a deployment
+	// that does not slice. Absent everywhere else.
+	Slicing string `json:"slicing,omitempty"`
 }
 
 type rendition struct {
@@ -70,6 +74,11 @@ type rendition struct {
 	// uploaded, handed to a caller that is allowed to read them.
 	URLExpires bool `json:"url_expires,omitempty"`
 }
+
+// slicingOff is what a model's manifest says where the deployment does not
+// slice, so a caller waiting for a slice report learns it is not coming.
+const slicingOff = "this deployment does not slice models, so there are no slice reports; " +
+	"slice it yourself and store each report as the rendition slice or slice-support (POST /v1/jobs/renditions, admin on the namespace)"
 
 // original is the rendition name for the bytes exactly as uploaded.
 const original = "original"
@@ -359,6 +368,11 @@ func (s *Server) manifest(r *http.Request, a catalog.Asset) (manifest, error) {
 		})
 	}
 
+	notice := ""
+	if s.NoSlicing && model.Supported(a.ContentType) {
+		notice = slicingOff
+	}
+
 	return manifest{
 		Key:              a.Key,
 		Namespace:        a.Namespace,
@@ -374,6 +388,7 @@ func (s *Server) manifest(r *http.Request, a catalog.Asset) (manifest, error) {
 		URLExpires:       expires,
 		Renditions:       ladder,
 		RenditionsStatus: status,
+		Slicing:          notice,
 	}, nil
 }
 

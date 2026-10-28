@@ -42,6 +42,11 @@ type Config struct {
 	RenditionPoll     time.Duration
 	RenditionAttempts int
 
+	// Slicing is whether this deployment slices models with OrcaSlicer. Off,
+	// a model's ladder is its render alone and its manifest says how to
+	// supply the slice reports instead.
+	Slicing bool
+
 	// VideoWidths, VideoCRF and VideoPreset describe the encodes made for an
 	// uploaded video. The preset is the dial an operator on a shared machine
 	// actually wants: it trades encode time against file size.
@@ -98,6 +103,7 @@ func Load() (Config, error) {
 	cfg.RenditionQuality = number("RENDITION_QUALITY", imaging.DefaultQuality, 1, 100, &problems)
 	cfg.RenditionPoll = duration("RENDITION_POLL", renditions.DefaultPoll, &problems)
 	cfg.RenditionAttempts = number("RENDITION_ATTEMPTS", renditions.DefaultMaxAttempts, 1, 100, &problems)
+	cfg.Slicing = boolean("SLICING", true, &problems)
 	cfg.VideoWidths = widths("VIDEO_WIDTHS", video.DefaultWidths, &problems)
 	cfg.VideoCRF = number("VIDEO_CRF", video.DefaultCRF, 0, 51, &problems)
 	if preset := lookup("VIDEO_PRESET"); preset != "" {

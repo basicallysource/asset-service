@@ -154,3 +154,59 @@ func TestBytesThatWillNeverDeriveAreNotOfferedAgain(t *testing.T) {
 		t.Errorf("a permanently failed job was offered again: %d", res.Code)
 	}
 }
+
+// A deployment that does not slice says so to the worker that claims a model
+// and to anyone reading its manifest, and says nothing about anything else.
+func TestADeploymentThatDoesNotSliceSaysSoForModelsOnly(t *testing.T) {
+	h := newHarness(t)
+	h.server.NoSlicing = true
+
+	for _, upload := range []struct{ filename, contentType, body string }{
+		{"part.stl", "model/stl", "solid part\nendsolid part\n"},
+		{"chart.png", "image/png", testPNG(t)},
+	} {
+		res := h.upload(t, h.writer, "/v1/assets?namespace=docs&filename="+upload.filename, upload.contentType, upload.body)
+		if res.Code != http.StatusCreated {
+			t.Fatalf("upload %s: %d %s", upload.filename, res.Code, res.Body)
+		}
+		var stored map[string]any
+		json.Unmarshal(res.Body.Bytes(), &stored)
+
+		_, job := claim(t, h, h.worker)
+		if job == nil {
+			t.Fatalf("nothing to claim for %s", upload.filename)
+		}
+		wantNoSlicing := upload.contentType == "model/stl"
+		if got, _ := job["no_slicing"].(bool); got != wantNoSlicing {
+			t.Errorf("%s: claim says no_slicing = %v, want %v", upload.filename, got, wantNoSlicing)
+		}
+
+		manifest := h.do(t, http.MethodGet, "/v1/assets/"+stored["key"].(string), h.reader, "")
+		var got map[string]any
+		json.Unmarshal(manifest.Body.Bytes(), &got)
+		if _, said := got["slicing"].(string); said != wantNoSlicing {
+			t.Errorf("%s: manifest says slicing = %v, want a notice %v", upload.filename, got["slicing"], wantNoSlicing)
+		}
+	}
+}
+
+func TestADeploymentThatSlicesSaysNothingAboutIt(t *testing.T) {
+	h := newHarness(t)
+
+	res := h.upload(t, h.writer, "/v1/assets?namespace=docs&filename=part.stl", "model/stl", "solid part\nendsolid part\n")
+	if res.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", res.Code, res.Body)
+	}
+	var stored map[string]any
+	json.Unmarshal(res.Body.Bytes(), &stored)
+
+	if _, job := claim(t, h, h.worker); job == nil || job["no_slicing"] != nil {
+		t.Errorf("a slicing deployment sent %v, want no no_slicing", job)
+	}
+	manifest := h.do(t, http.MethodGet, "/v1/assets/"+stored["key"].(string), h.reader, "")
+	var got map[string]any
+	json.Unmarshal(manifest.Body.Bytes(), &got)
+	if got["slicing"] != nil {
+		t.Errorf("manifest carries a slicing notice: %v", got["slicing"])
+	}
+}

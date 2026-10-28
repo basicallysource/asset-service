@@ -163,7 +163,11 @@ that has a slicer (`ORCA_BIN`, `ORCA_PROFILES`) claims it. Where none does,
 the job fails visibly rather than completing with the numbers missing. Both
 support variants are sliced every time because grams turn on that one boolean;
 a fixed pair of renditions is what keeps the queue and the manifest free of
-parameters.
+parameters. Slicing is the one expensive thing a model upload costs, so a
+deployment may turn it off (`ASSET_SLICING=false`): the claim tells the worker
+to render only, no machine needs a slicer, and the manifest says why there are
+no slice reports and how to store your own. The deployment decides, in one
+place, rather than each worker.
 
 **Deriving can happen on a different machine.** The queue, the bytes and every
 naming decision stay here; the CPU time does not have to. `POST /v1/jobs/claim`

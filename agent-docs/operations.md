@@ -27,6 +27,7 @@ one restart at a time.
 | `ASSET_RENDITION_QUALITY` | `82` | JPEG quality, 1-100. Does not apply to renditions kept as PNG. |
 | `ASSET_RENDITION_POLL` | `15s` | Idle interval. Work normally starts at once; this catches anything missed. |
 | `ASSET_RENDITION_ATTEMPTS` | `4` | Failures before an asset is left alone and reported as failed. |
+| `ASSET_SLICING` | `true` | Slice 3D models with OrcaSlicer. Off, a model's ladder is its render alone, no machine needs a slicer, and its manifest says how to supply the slice reports; see below. |
 | `ASSET_VIDEO_WIDTHS` | `960,1920` | Widths to encode video at, up to the source's own. A narrower source gets one encode at its own width. |
 | `ASSET_VIDEO_CRF` | `26` | H.264 quality, 0-51, lower being better and larger. |
 | `ASSET_VIDEO_PRESET` | `medium` | libx264 speed against size. `veryfast` on a busy host; `slow` if the bytes matter more than the wait. |

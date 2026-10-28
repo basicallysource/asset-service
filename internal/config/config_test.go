@@ -100,3 +100,22 @@ func TestNonPositiveSizesAndDurationsAreRejected(t *testing.T) {
 		t.Error("a negative signed URL lifetime was accepted")
 	}
 }
+
+func TestSlicingDefaultsOnAndCanBeTurnedOff(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := Load()
+	if err != nil || !cfg.Slicing {
+		t.Fatalf("default: slicing = %v, err = %v; want on", cfg.Slicing, err)
+	}
+
+	t.Setenv("ASSET_SLICING", "false")
+	if cfg, err = Load(); err != nil || cfg.Slicing {
+		t.Fatalf("slicing = %v, err = %v; want off", cfg.Slicing, err)
+	}
+
+	t.Setenv("ASSET_SLICING", "maybe")
+	if _, err = Load(); err == nil || !strings.Contains(err.Error(), "ASSET_SLICING") {
+		t.Fatalf("a bad value was accepted: %v", err)
+	}
+}

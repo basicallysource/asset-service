@@ -2,10 +2,13 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -144,5 +147,26 @@ func TestSupportedIsAboutTheTypeAlone(t *testing.T) {
 	}
 	if Supported("image/png") || Supported("application/octet-stream") {
 		t.Error("non-model types must not be")
+	}
+}
+
+// A deployment that does not slice still gets the picture, from a machine
+// with no OrcaSlicer at all, and the job completes.
+func TestLadderWithoutSlicingIsTheRenderAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "part.stl")
+	if err := os.WriteFile(path, binarySTL(tetrahedron(vec3{})), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ladder, err := Ladder(context.Background(), path, Options{SkipSlicing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ladder) != 1 || ladder[0].Name != RenderName {
+		t.Fatalf("ladder = %v, want the render alone", ladder)
+	}
+
+	if _, err := Ladder(context.Background(), path, Options{}); err == nil {
+		t.Error("a machine with no slicer completed a job that wants slices")
 	}
 }

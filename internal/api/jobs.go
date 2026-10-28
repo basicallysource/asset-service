@@ -13,6 +13,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/derive"
 	"github.com/basicallysource/asset-service/internal/httpx"
+	"github.com/basicallysource/asset-service/internal/model"
 )
 
 // Working the queue from somewhere else.
@@ -48,6 +49,9 @@ type claimedJob struct {
 	Attempts    int    `json:"attempts"`
 	// SourceURL is where to read the original. It may expire.
 	SourceURL string `json:"source_url"`
+	// NoSlicing tells the worker this deployment does not slice models. Absent
+	// means slice, so a worker and a service of different ages still agree.
+	NoSlicing bool `json:"no_slicing,omitempty"`
 }
 
 // admin reports whether the caller may work jobs in a namespace, answering the
@@ -136,6 +140,7 @@ func (s *Server) claimJob(w http.ResponseWriter, r *http.Request) {
 		ContentType: asset.ContentType,
 		Attempts:    job.Attempts,
 		SourceURL:   source,
+		NoSlicing:   s.NoSlicing && model.Supported(asset.ContentType),
 	})
 }
 

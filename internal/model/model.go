@@ -68,6 +68,10 @@ type Options struct {
 	// directory, the one holding machine/, process/ and filament/.
 	Bin      string
 	Profiles string
+	// SkipSlicing is a deployment that does not slice: the ladder is the
+	// render alone, and a machine without OrcaSlicer completes it instead of
+	// failing it.
+	SkipSlicing bool
 }
 
 // OptionsFromEnv reads ORCA_BIN and ORCA_PROFILES -- the same two variables
@@ -136,6 +140,9 @@ func Ladder(ctx context.Context, path string, opts Options) ([]Rendition, error)
 		Bytes:       pngBytes,
 	}}
 
+	if opts.SkipSlicing {
+		return out, nil
+	}
 	if !Available(opts) {
 		return nil, fmt.Errorf("model: OrcaSlicer is not available on this machine (set ORCA_BIN and ORCA_PROFILES)")
 	}

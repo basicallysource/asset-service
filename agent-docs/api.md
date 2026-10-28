@@ -211,6 +211,14 @@ video's are H.264 in MP4, plus one still named `poster`. **Tell them apart by `c
 width like any other rung, and treating it as a video would hand a browser an
 image where it expected something to play.
 
+A model (an STL) has a `render` picture and, where the deployment slices,
+`slice` and `slice-support` reports. Where it does not (`ASSET_SLICING=false`)
+the manifest carries `"slicing"`, a sentence saying so and how to supply the
+reports yourself: slice the model and store each report as the rendition
+`slice` or `slice-support` with `POST /v1/jobs/renditions`, as an admin of the
+namespace. The field is absent on a deployment that slices and on everything
+that is not a model.
+
 `renditions_status` says whether the ladder is finished:
 
 | | |
@@ -260,8 +268,9 @@ does not exist.
 ## POST /v1/jobs/claim
 
 Take the oldest job that is due. `200` returns the asset's key, content type
-and a `source_url` to read the original from; `204` means there is nothing to
-do. Requires `admin:*` -- a worker decides what an asset's smaller copies look
+and a `source_url` to read the original from, plus `"no_slicing": true` on a
+model of a deployment that does not slice (render it, do not slice it); `204`
+means there is nothing to do. Requires `admin:*` -- a worker decides what an asset's smaller copies look
 like, which is not something a write scope buys.
 
 A claim is not a lease you renew. Go quiet for half an hour and the job is

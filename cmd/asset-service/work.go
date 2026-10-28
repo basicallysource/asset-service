@@ -88,6 +88,7 @@ type job struct {
 	ContentType string `json:"content_type"`
 	Attempts    int    `json:"attempts"`
 	SourceURL   string `json:"source_url"`
+	NoSlicing   bool   `json:"no_slicing"`
 
 	// LocalPath is set when the file is already on this machine.
 	LocalPath string `json:"-"`
@@ -134,6 +135,7 @@ func build(ctx context.Context, c *client, claimed job, options derive.Options) 
 		source = fetched
 	}
 
+	options.Model.SkipSlicing = claimed.NoSlicing
 	ladder, err := derive.Ladder(ctx, source, claimed.ContentType, options)
 	if err != nil {
 		return 0, err

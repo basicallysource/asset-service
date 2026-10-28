@@ -185,6 +185,9 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	modelOpts := model.OptionsFromEnv()
+	modelOpts.SkipSlicing = !cfg.Slicing
+
 	if cfg.Renditions {
 		worker := &renditions.Worker{
 			Catalog: db,
@@ -192,7 +195,7 @@ func serve() error {
 			Options: derive.Options{
 				Image: imaging.Options{Widths: cfg.RenditionWidths, Quality: cfg.RenditionQuality},
 				Video: video.Options{Widths: cfg.VideoWidths, CRF: cfg.VideoCRF, Preset: cfg.VideoPreset},
-				Model: model.OptionsFromEnv(),
+				Model: modelOpts,
 			},
 			Logger:      logger,
 			MaxAttempts: cfg.RenditionAttempts,
@@ -217,6 +220,7 @@ func serve() error {
 		AdminLogins:    cfg.AdminLogins,
 
 		RenditionAttempts: cfg.RenditionAttempts,
+		NoSlicing:         !cfg.Slicing,
 	}
 
 	httpServer := &http.Server{
