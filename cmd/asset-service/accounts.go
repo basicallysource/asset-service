@@ -17,7 +17,7 @@ import (
 // on the host; an admin can do the same over the API or on the login page.
 func accountsCommand(args []string) error {
 	if len(args) == 0 {
-		return errors.New("accounts: expected list, promote, admin, block or reset")
+		return errors.New("accounts: expected list, promote, manager, admin, block or reset")
 	}
 
 	path := strings.TrimSpace(os.Getenv("ASSET_DB_PATH"))
@@ -37,6 +37,7 @@ func accountsCommand(args []string) error {
 
 	tiers := map[string]string{
 		"promote": catalog.TierContributor,
+		"manager": catalog.TierManager,
 		"admin":   catalog.TierAdmin,
 		"block":   catalog.TierBlocked,
 		"reset":   catalog.TierUnknown,

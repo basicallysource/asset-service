@@ -155,6 +155,7 @@ scoped keys.
 ```sh
 asset-service accounts list             # who has signed in, and what they have used
 asset-service accounts promote <handle> # contributor: 5x limits, any content type
+asset-service accounts manager <handle> # upload anywhere, mint any key, revoke only its own
 asset-service accounts admin <handle>   # let them manage keys
 asset-service accounts block <handle>   # stop them, and revoke their keys
 asset-service accounts reset <handle>   # back to the default limits
@@ -163,6 +164,10 @@ asset-service accounts reset <handle>   # back to the default limits
 Tiers decide limits: file size, uploads an hour, bytes a day, how many live
 tokens, and which content types. An unknown account -- anyone who has signed in
 -- may upload images, up to sizes and rates nobody working normally will reach.
+A manager is for someone who helps run the service without being trusted with
+everyone else's credentials: it uploads and mints keys like an admin, but it
+revokes only keys its own account holds, and it moves other accounts only
+between unknown and contributor.
 
 ## Keys
 

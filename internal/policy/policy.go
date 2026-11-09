@@ -44,9 +44,10 @@ var Unlimited = Limits{}
 // For returns the limits of a tier.
 func For(tier string) Limits {
 	switch tier {
-	case catalog.TierAdmin:
-		// Whoever runs this service: no ceiling on what they may do, because
-		// the alternative is a shell on the host. A time limit all the same --
+	case catalog.TierAdmin, catalog.TierManager:
+		// Whoever runs this service, and whoever helps run it: no ceiling on
+		// what they may upload, because the alternative is a shell on the
+		// host. A time limit all the same --
 		// a credential handed out by a web page should not outlive anybody's
 		// memory of asking for it.
 		return Limits{TokenLifetime: 365 * 24 * time.Hour}
@@ -97,11 +98,50 @@ func For(tier string) Limits {
 func Scopes(tier, handle string) []string {
 	namespace := Namespace(handle)
 	scopes := []string{"write:" + namespace, "read:" + namespace}
-	if tier == catalog.TierAdmin {
+	if tier == catalog.TierAdmin || tier == catalog.TierManager {
 		// Read and write everywhere, and the right to hand out credentials.
 		scopes = []string{"write:*", "read:*", "admin:*"}
 	}
 	return scopes
+}
+
+// NoAccount is the tier a credential acts with when it belongs to no account:
+// one minted by hand on the host, which is as trusted as the host.
+const NoAccount = ""
+
+// The rules below say what a credential may do to other credentials and other
+// accounts. Scopes say which namespaces it administers; these say whose. Each
+// takes the tier of the account the credential belongs to -- and a key an
+// account mints belongs to that same account, so it carries the same rules.
+
+// RevokesAnyKey reports whether a credential may revoke any key its scopes
+// administer. Otherwise it may revoke only keys of its own account.
+func RevokesAnyKey(tier string) bool {
+	return tier == NoAccount || tier == catalog.TierAdmin
+}
+
+// SeesAccounts reports whether a credential holding an admin scope may list
+// the accounts that have signed in.
+func SeesAccounts(tier string) bool {
+	return RevokesAnyKey(tier) || tier == catalog.TierManager
+}
+
+// MayMoveAccount reports whether a credential of tier by may move an account
+// from one tier to another. A manager moves accounts between unknown and
+// contributor and nothing else: it cannot raise anybody to its own standing,
+// block anybody, or touch an account that is a manager or an admin, itself
+// included.
+func MayMoveAccount(by, from, to string) bool {
+	if RevokesAnyKey(by) {
+		return true
+	}
+	if by != catalog.TierManager {
+		return false
+	}
+	open := func(tier string) bool {
+		return tier == catalog.TierUnknown || tier == catalog.TierContributor
+	}
+	return open(from) && open(to)
 }
 
 // Namespace is where an account may write when it is confined to one.

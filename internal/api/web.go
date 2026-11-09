@@ -11,10 +11,12 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/httpx"
+	"github.com/basicallysource/asset-service/internal/policy"
 )
 
 // A small page for the things people need a screen for: signing in, handing
-// somebody else a key, and -- for an admin -- moving accounts between tiers.
+// somebody else a key, and -- for an admin or a manager -- moving accounts
+// between tiers.
 //
 // It holds its token in the tab rather than in a cookie, and attaches it by
 // hand to every request. Nothing here is an ambient credential, so there is
@@ -55,20 +57,38 @@ type mintedKey struct {
 
 type accountsView struct {
 	// Visible is whether this principal gets the section at all. The list of
-	// who signed in is an administrator's view, nobody else's.
+	// who signed in is for administrators and managers, nobody else.
 	Visible  bool
 	Accounts []accountRow
-	Tiers    []string
 	Error    string
 }
 
 type accountRow struct {
-	ID           string
-	Handle       string
-	Tier         string
+	ID     string
+	Handle string
+	Tier   string
+	// Tiers are the ones this principal may move the account to, its current
+	// one included. Empty means it is not this principal's to move.
+	Tiers        []string
 	UploadsToday int
 	LiveKeys     int
 	Joined       string
+}
+
+// tiersFor lists the tiers a principal of tier by may move an account in tier
+// from to, the current one included so a form can show it selected. It is
+// empty when the account is not this principal's to move.
+func tiersFor(by, from string) []string {
+	var tiers []string
+	for _, tier := range catalog.Tiers {
+		if tier == from || policy.MayMoveAccount(by, from, tier) {
+			tiers = append(tiers, tier)
+		}
+	}
+	if len(tiers) < 2 {
+		return nil
+	}
+	return tiers
 }
 
 // firstNamespace is where this principal can write, for telling them so.
@@ -169,28 +189,15 @@ func (s *Server) revokeKeyForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := r.PathValue("name")
-	keys, err := s.Catalog.ListAPIKeys(r.Context())
-	if err != nil {
-		s.renderKeys(w, r, nil, "Could not read the key list.")
-		return
+	revoked, err := s.revoke(r.Context(), principal, r.PathValue("name"))
+	switch {
+	case err != nil:
+		s.renderKeys(w, r, nil, "Could not revoke it.")
+	case !revoked:
+		s.renderKeys(w, r, nil, "There is no such key for you to revoke.")
+	default:
+		s.renderKeys(w, r, nil, "")
 	}
-	for _, key := range keys {
-		if key.Name != name {
-			continue
-		}
-		if !principal.CanGrant(key.Scopes) {
-			s.renderKeys(w, r, nil, "That key is not yours to revoke.")
-			return
-		}
-		if _, err := s.Catalog.RevokeAPIKey(r.Context(), name); err != nil {
-			s.renderKeys(w, r, nil, "Could not revoke it.")
-			return
-		}
-		s.Logger.Info("revoked a key", "name", name, "by", principal.Name)
-		break
-	}
-	s.renderKeys(w, r, nil, "")
 }
 
 // renderKeys draws the list of keys this principal may administer.
@@ -209,11 +216,13 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 	}
 
 	keys, err := s.Catalog.ListAPIKeys(r.Context())
-	if err != nil {
+	manages, merr := s.keysManagedBy(r.Context(), principal)
+	if err != nil || merr != nil {
 		view.Error = "Could not read the key list."
+		keys = nil
 	}
 	for _, key := range keys {
-		if !principal.CanGrant(key.Scopes) {
+		if !manages(key) {
 			continue
 		}
 		row := keyRow{
@@ -237,7 +246,7 @@ func (s *Server) renderKeys(w http.ResponseWriter, r *http.Request, minted *mint
 	}
 }
 
-// accountsFragment renders the account list for an administrator. For anybody
+// accountsFragment renders the account list for an admin or a manager. For anybody
 // else it renders nothing: the section simply does not exist for them.
 func (s *Server) accountsFragment(w http.ResponseWriter, r *http.Request) {
 	s.renderAccounts(w, r, "")
@@ -260,14 +269,14 @@ func (s *Server) setTierForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.applyTier(r.Context(), r.PathValue("id"), r.PostFormValue("tier"), principal.Name); err != nil {
+	if _, err := s.applyTier(r.Context(), principal, r.PathValue("id"), r.PostFormValue("tier")); err != nil {
 		s.renderAccounts(w, r, "Could not change that tier: "+err.Error())
 		return
 	}
 	s.renderAccounts(w, r, "")
 }
 
-// renderAccounts draws every account and where it stands, for an admin.
+// renderAccounts draws every account and where it stands.
 func (s *Server) renderAccounts(w http.ResponseWriter, r *http.Request, message string) {
 	principal := auth.From(r.Context())
 	if principal == nil {
@@ -275,11 +284,14 @@ func (s *Server) renderAccounts(w http.ResponseWriter, r *http.Request, message 
 		return
 	}
 
-	view := accountsView{
-		Visible: principal.Holds(auth.ActionAdmin),
-		Tiers:   []string{catalog.TierUnknown, catalog.TierContributor, catalog.TierAdmin, catalog.TierBlocked},
-		Error:   message,
+	view := accountsView{Error: message}
+	visible, err := s.seesAccounts(r.Context(), principal)
+	by, berr := s.tierOf(r.Context(), principal)
+	if err != nil || berr != nil {
+		view.Error = "Could not read the account list."
+		visible = false
 	}
+	view.Visible = visible
 	if view.Visible {
 		bodies, err := s.accountBodies(r.Context())
 		if err != nil {
@@ -290,6 +302,7 @@ func (s *Server) renderAccounts(w http.ResponseWriter, r *http.Request, message 
 				ID:           body.ID,
 				Handle:       body.Handle,
 				Tier:         body.Tier,
+				Tiers:        tiersFor(by, body.Tier),
 				UploadsToday: body.UploadsToday,
 				LiveKeys:     body.LiveKeys,
 				Joined:       body.CreatedAt.Format("2 Jan 2006"),

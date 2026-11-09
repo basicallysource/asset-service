@@ -66,12 +66,13 @@ in the response and nowhere else.
 
 ## GET /v1/keys
 
-Lists the keys the caller could have created itself. Others are not shown.
+Lists the keys the caller may revoke. Others are not shown.
 
 ## POST /v1/keys/{name}/revoke
 
 Makes a key stop working, at once. A key the caller may not administer answers
-`404`, the same as one that does not exist.
+`404`, the same as one that does not exist. A manager, and any key a manager
+minted, administers only keys of its own account.
 
 ## POST /v1/assets
 
