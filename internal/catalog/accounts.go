@@ -19,9 +19,27 @@ const (
 	// TierAdmin can mint credentials for any namespace. It is how the people
 	// who run this service use it without shell access to the host.
 	TierAdmin = "admin"
+	// TierManager has an admin's limits and scopes, so it can upload anywhere
+	// and mint keys for any namespace, but it looks after its own: it revokes
+	// only the keys of its own account, and moves other accounts only between
+	// unknown and contributor. The rules live in internal/policy.
+	TierManager = "manager"
 	// TierBlocked can no longer upload anything.
 	TierBlocked = "blocked"
 )
+
+// Tiers is every tier there is, in the order a screen offers them.
+var Tiers = []string{TierUnknown, TierContributor, TierManager, TierAdmin, TierBlocked}
+
+// ValidTier reports whether a tier is one of Tiers.
+func ValidTier(tier string) bool {
+	for _, t := range Tiers {
+		if t == tier {
+			return true
+		}
+	}
+	return false
+}
 
 // Account is whoever is behind a token.
 type Account struct {
@@ -61,9 +79,7 @@ func (db *DB) AccountByID(ctx context.Context, id string) (Account, error) {
 
 // SetTier changes how much an account is trusted.
 func (db *DB) SetTier(ctx context.Context, id, tier string) error {
-	switch tier {
-	case TierUnknown, TierContributor, TierAdmin, TierBlocked:
-	default:
+	if !ValidTier(tier) {
 		return fmt.Errorf("catalog: unknown tier %q", tier)
 	}
 

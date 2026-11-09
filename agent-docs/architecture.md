@@ -72,7 +72,7 @@ account and expires.
 
 **Limits belong to accounts, not tokens.** Minting another token must not buy
 more capacity, or every limit is decoration. An account's tier -- unknown,
-contributor, admin, blocked -- decides the size of a file, uploads an hour, a
+contributor, manager, admin, blocked -- decides the size of a file, uploads an hour, a
 day and a week, bytes a day, how many live tokens it may hold, and which
 content types it may store. Unknown accounts upload images and nothing else,
 throttled to a day's worth of documentation work; a contributor -- an account
@@ -81,6 +81,17 @@ gets five times every number, files big enough for video, and any content
 type. The five-times ratio is the definition, and a test holds it. The numbers
 live in `internal/policy`, in one place, so the rules can be read rather than
 inferred from handlers.
+
+**Scopes say which namespaces a credential administers; its account's tier
+says whose credentials and accounts.** An admin, and a key minted on the host,
+which belongs to no account, may revoke any key their scopes cover and move any
+account to any tier. A manager has an admin's limits and self-served scopes, so
+it uploads anywhere and mints keys for any namespace, but it revokes only keys
+of its own account, and moves accounts only between unknown and contributor --
+never to manager, admin or blocked, and never one that is already a manager or
+an admin. A key belongs to the account that minted it, so whatever a manager
+mints is held to the same rules. Those rules are in `internal/policy` too, and
+each is applied in one place that the API and the login page share.
 
 **An image claim is verified against the bytes.** The declared content type is
 what image-only accounts are limited by, so the upload path sniffs the first

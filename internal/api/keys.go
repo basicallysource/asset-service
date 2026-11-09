@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/basicallysource/asset-service/internal/auth"
 	"github.com/basicallysource/asset-service/internal/catalog"
 	"github.com/basicallysource/asset-service/internal/httpx"
+	"github.com/basicallysource/asset-service/internal/policy"
 )
 
 // Credentials can be managed over the API as well as on the host, so that
@@ -16,7 +18,9 @@ import (
 //
 // The rule that makes that safe: a principal can only mint what it already
 // administers. admin:web can create a key for web and cannot create one for
-// parts, so no chain of key creation ever widens access.
+// parts, so no chain of key creation ever widens access. A key belongs to the
+// account that minted it, so whatever that account may not do, the keys it
+// mints may not do either.
 
 // maxKeyLifetime bounds how long an issued credential can last. A key with no
 // end date is a key nobody will ever get around to rotating.
@@ -121,13 +125,17 @@ func (s *Server) listKeys(w http.ResponseWriter, r *http.Request) {
 		s.writeAssetError(w, r, err)
 		return
 	}
+	manages, err := s.keysManagedBy(r.Context(), principal)
+	if err != nil {
+		s.writeAssetError(w, r, err)
+		return
+	}
 
-	// Show only what this principal could have created itself. Someone who
-	// administers one namespace has no business enumerating everyone else's
-	// credentials.
+	// Show only what this principal may revoke. Someone who administers one
+	// namespace has no business enumerating everyone else's credentials.
 	listed := make([]keyBody, 0, len(keys))
 	for _, key := range keys {
-		if !principal.CanGrant(key.Scopes) {
+		if !manages(key) {
 			continue
 		}
 		body := keyBody{
@@ -151,37 +159,64 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := r.PathValue("name")
-	keys, err := s.Catalog.ListAPIKeys(r.Context())
-	if err != nil {
-		s.writeAssetError(w, r, err)
-		return
-	}
-
-	var target catalog.APIKey
-	found := false
-	for _, key := range keys {
-		if key.Name == name {
-			target, found = key, true
-			break
-		}
-	}
-	if !found || !principal.CanGrant(target.Scopes) {
-		// A key this principal may not administer is a key it may not know
-		// about either.
-		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound, "no such key")
-		return
-	}
-
-	revoked, err := s.Catalog.RevokeAPIKey(r.Context(), name)
+	revoked, err := s.revoke(r.Context(), principal, name)
 	if err != nil {
 		s.writeAssetError(w, r, err)
 		return
 	}
 	if !revoked {
-		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound, "no such active key")
+		// A key this principal may not revoke is a key it may not know about
+		// either.
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound, "no such key")
 		return
 	}
-
-	s.Logger.Info("revoked a key", "name", name, "by", principal.Name)
 	httpx.JSON(w, http.StatusOK, map[string]string{"revoked": name})
+}
+
+// keysManagedBy is the one rule for which keys a principal may see and revoke:
+// keys whose every scope it administers, and -- unless its account may revoke
+// anybody's -- only those of its own account.
+func (s *Server) keysManagedBy(ctx context.Context, principal *auth.Principal) (func(catalog.APIKey) bool, error) {
+	tier, err := s.tierOf(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	anyKey := policy.RevokesAnyKey(tier)
+	return func(key catalog.APIKey) bool {
+		if !principal.CanGrant(key.Scopes) {
+			return false
+		}
+		return anyKey || key.AccountID == principal.Account
+	}, nil
+}
+
+// revoke makes one key stop working, if this principal may revoke it. It
+// reports false for a key that does not exist, is already revoked, or is not
+// this principal's to revoke, without saying which. Both the API and the page
+// come through here.
+func (s *Server) revoke(ctx context.Context, principal *auth.Principal, name string) (bool, error) {
+	keys, err := s.Catalog.ListAPIKeys(ctx)
+	if err != nil {
+		return false, err
+	}
+	manages, err := s.keysManagedBy(ctx, principal)
+	if err != nil {
+		return false, err
+	}
+
+	for _, key := range keys {
+		if key.Name != name {
+			continue
+		}
+		if !manages(key) {
+			return false, nil
+		}
+		revoked, err := s.Catalog.RevokeAPIKey(ctx, name)
+		if err != nil || !revoked {
+			return false, err
+		}
+		s.Logger.Info("revoked a key", "name", name, "by", principal.Name)
+		return true, nil
+	}
+	return false, nil
 }

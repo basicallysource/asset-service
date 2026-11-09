@@ -101,6 +101,10 @@ Usage:
   asset-service accounts list                who has signed in
   asset-service accounts promote <handle>    make an account a contributor:
                                              5x the limits, any content type
+  asset-service accounts manager <handle>    an admin's limits and keys, but
+                                             it revokes only its own keys and
+                                             moves accounts only between
+                                             unknown and contributor
   asset-service accounts admin <handle>      let an account manage keys
   asset-service accounts block <handle>      stop an account uploading
 
